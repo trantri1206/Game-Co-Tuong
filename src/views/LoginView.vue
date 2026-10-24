@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, reactive } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
 import { useAppStore } from '@/stores/app';
@@ -11,15 +11,22 @@ const authStore = useAuthStore();
 const appStore = useAppStore();
 
 const activeTab = ref<'login' | 'register'>('login');
+const isSubmitting = ref(false);
 
-// Login Form
-const loginForm = ref({
+// 1. Dữ liệu Form Đăng nhập & Lỗi từng trường
+const loginForm = reactive({
   usernameOrEmail: 'player_red_demo',
   password: 'Password123!'
 });
 
-// Register Form
-const registerForm = ref({
+const loginErrors = reactive<{
+  usernameOrEmail?: string;
+  password?: string;
+  general?: string;
+}>({});
+
+// 2. Dữ liệu Form Đăng ký & Lỗi từng trường
+const registerForm = reactive({
   username: '',
   email: '',
   displayName: '',
@@ -27,23 +34,135 @@ const registerForm = ref({
   confirmPassword: ''
 });
 
-const isSubmitting = ref(false);
-const formError = ref<string | null>(null);
+const registerErrors = reactive<{
+  username?: string;
+  email?: string;
+  displayName?: string;
+  password?: string;
+  confirmPassword?: string;
+  general?: string;
+}>({});
 
-async function handleLogin() {
-  formError.value = null;
-  if (!loginForm.value.usernameOrEmail || !loginForm.value.password) {
-    formError.value = 'Vui lòng nhập tên đăng nhập/email và mật khẩu.';
-    return;
+function clearLoginErrors(field?: 'usernameOrEmail' | 'password') {
+  if (field) {
+    delete loginErrors[field];
+  } else {
+    Object.keys(loginErrors).forEach((key) => delete (loginErrors as any)[key]);
   }
+  delete loginErrors.general;
+}
+
+function clearRegisterErrors(field?: 'username' | 'email' | 'displayName' | 'password' | 'confirmPassword') {
+  if (field) {
+    delete registerErrors[field];
+  } else {
+    Object.keys(registerErrors).forEach((key) => delete (registerErrors as any)[key]);
+  }
+  delete registerErrors.general;
+}
+
+function switchTab(tab: 'login' | 'register') {
+  activeTab.value = tab;
+  clearLoginErrors();
+  clearRegisterErrors();
+}
+
+// 3. Kiểm tra tính hợp lệ Client-side cho Đăng nhập
+function validateLogin(): boolean {
+  clearLoginErrors();
+  let isValid = true;
+
+  if (!loginForm.usernameOrEmail.trim()) {
+    loginErrors.usernameOrEmail = 'Tên đăng nhập hoặc email không được để trống.';
+    isValid = false;
+  }
+
+  if (!loginForm.password) {
+    loginErrors.password = 'Mật khẩu không được để trống.';
+    isValid = false;
+  }
+
+  return isValid;
+}
+
+// 4. Kiểm tra tính hợp lệ Client-side cho Đăng ký
+function validateRegister(): boolean {
+  clearRegisterErrors();
+  let isValid = true;
+
+  // Username
+  const username = registerForm.username.trim();
+  if (!username) {
+    registerErrors.username = 'Tên đăng nhập không được để trống.';
+    isValid = false;
+  } else if (username.length < 3 || username.length > 30) {
+    registerErrors.username = 'Tên đăng nhập phải có độ dài từ 3 đến 30 ký tự.';
+    isValid = false;
+  } else if (!/^[a-zA-Z0-9_]+$/.test(username)) {
+    registerErrors.username = 'Tên đăng nhập chỉ được chứa chữ cái, số và dấu gạch dưới (_), không chứa khoảng trắng.';
+    isValid = false;
+  }
+
+  // Email
+  const email = registerForm.email.trim();
+  if (!email) {
+    registerErrors.email = 'Email không được để trống.';
+    isValid = false;
+  } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    registerErrors.email = 'Email không đúng định dạng hợp lệ (ví dụ: user@example.com).';
+    isValid = false;
+  }
+
+  // Password
+  const pwd = registerForm.password;
+  if (!pwd) {
+    registerErrors.password = 'Mật khẩu không được để trống.';
+    isValid = false;
+  } else {
+    if (pwd.length < 8) {
+      registerErrors.password = 'Mật khẩu phải có độ dài tối thiểu 8 ký tự.';
+      isValid = false;
+    } else if (!/[A-Z]/.test(pwd)) {
+      registerErrors.password = 'Mật khẩu phải chứa ít nhất 1 chữ cái in hoa (A-Z).';
+      isValid = false;
+    } else if (!/[a-z]/.test(pwd)) {
+      registerErrors.password = 'Mật khẩu phải chứa ít nhất 1 chữ cái in thường (a-z).';
+      isValid = false;
+    } else if (!/[0-9]/.test(pwd)) {
+      registerErrors.password = 'Mật khẩu phải chứa ít nhất 1 chữ số (0-9).';
+      isValid = false;
+    } else if (!/[!@#$%^&*(),.?":{}|<>]/.test(pwd)) {
+      registerErrors.password = 'Mật khẩu phải chứa ít nhất 1 ký tự đặc biệt (ví dụ: !@#$%^&*).';
+      isValid = false;
+    }
+  }
+
+  // Confirm Password
+  if (!registerForm.confirmPassword) {
+    registerErrors.confirmPassword = 'Vui lòng xác nhận lại mật khẩu.';
+    isValid = false;
+  } else if (registerForm.confirmPassword !== registerForm.password) {
+    registerErrors.confirmPassword = 'Mật khẩu xác nhận không khớp với mật khẩu.';
+    isValid = false;
+  }
+
+  return isValid;
+}
+
+// 5. Xử lý Đăng nhập với cơ chế Chống click liên tục & Gọi API Thật
+async function handleLogin() {
+  // Ngăn chặn bấm liên tục gửi nhiều yêu cầu đồng thời
+  if (isSubmitting.value) return;
+
+  if (!validateLogin()) return;
 
   isSubmitting.value = true;
   appStore.setLoading(true, 'Đang xác thực thông tin đăng nhập...');
 
   try {
     const data = await authApi.login({
-      usernameOrEmail: loginForm.value.usernameOrEmail,
-      password: loginForm.value.password
+      usernameOrEmail: loginForm.usernameOrEmail.trim(),
+      password: loginForm.password
     });
 
     authStore.setAuth(data.token, {
@@ -53,23 +172,17 @@ async function handleLogin() {
       displayName: data.user.displayName
     });
 
-    appStore.notify('Đăng nhập thành công! Chào mừng bạn vào sảnh cờ.', 'success');
+    appStore.notify('Đăng nhập thành công! Đang chuyển vào sảnh cờ...', 'success');
     const redirectPath = (route.query.redirect as string) || '/lobby';
-    router.push(redirectPath);
+    await router.push(redirectPath);
   } catch (err: any) {
-    // Nếu API backend đang tắt, hỗ trợ đăng nhập mẫu demo để trải nghiệm giao diện
-    if (err.isNetworkError || err.statusCode === 404) {
-      console.warn('Backend chưa sẵn sàng, kích hoạt chế độ đăng nhập giả lập cho demo shell.');
-      authStore.setAuth('mock_jwt_token_demo_' + Date.now(), {
-        userId: 1,
-        username: loginForm.value.usernameOrEmail || 'player_red_demo',
-        email: 'player_red@example.com',
-        displayName: 'Kỳ Thủ Đỏ Demo'
-      });
-      appStore.notify('Đã đăng nhập chế độ Demo (Backend Offline)', 'info');
-      router.push('/lobby');
+    // Luôn mở lại nút khi có lỗi
+    if (err.statusCode === 401) {
+      loginErrors.general = 'Tên đăng nhập hoặc mật khẩu không chính xác.';
+    } else if (err.isNetworkError) {
+      loginErrors.general = 'Không thể kết nối tới máy chủ backend. Vui lòng kiểm tra lại dịch vụ.';
     } else {
-      formError.value = err.message || 'Đăng nhập không thành công.';
+      loginErrors.general = err.message || 'Đăng nhập không thành công.';
     }
   } finally {
     isSubmitting.value = false;
@@ -77,49 +190,71 @@ async function handleLogin() {
   }
 }
 
+// 6. Xử lý Đăng ký với cơ chế Phân phối Lỗi từng trường
 async function handleRegister() {
-  formError.value = null;
-  if (!registerForm.value.username || !registerForm.value.email || !registerForm.value.password) {
-    formError.value = 'Vui lòng điền đầy đủ các thông tin bắt buộc.';
-    return;
-  }
+  // Ngăn chặn bấm liên tục gửi nhiều yêu cầu đồng thời
+  if (isSubmitting.value) return;
 
-  if (registerForm.value.password !== registerForm.value.confirmPassword) {
-    formError.value = 'Mật khẩu xác nhận không khớp.';
-    return;
-  }
+  if (!validateRegister()) return;
 
   isSubmitting.value = true;
-  appStore.setLoading(true, 'Đang tạo tài khoản mới...');
+  appStore.setLoading(true, 'Đang khởi tạo tài khoản mới...');
 
   try {
     await authApi.register({
-      username: registerForm.value.username,
-      email: registerForm.value.email,
-      displayName: registerForm.value.displayName || registerForm.value.username,
-      password: registerForm.value.password,
-      confirmPassword: registerForm.value.confirmPassword
+      username: registerForm.username.trim(),
+      email: registerForm.email.trim(),
+      displayName: registerForm.displayName.trim() || registerForm.username.trim(),
+      password: registerForm.password,
+      confirmPassword: registerForm.confirmPassword
     });
 
-    appStore.notify('Đăng ký thành công! Hãy đăng nhập bằng tài khoản mới.', 'success');
-    loginForm.value.usernameOrEmail = registerForm.value.username;
-    loginForm.value.password = registerForm.value.password;
-    activeTab.value = 'login';
+    appStore.notify('Đăng ký tài khoản thành công! Bạn có thể đăng nhập ngay.', 'success');
+
+    // Chuyển sang tab đăng nhập và điền sẵn tên tài khoản
+    loginForm.usernameOrEmail = registerForm.username.trim();
+    loginForm.password = '';
+    switchTab('login');
   } catch (err: any) {
-    formError.value = err.message || 'Đăng ký tài khoản không thành công.';
+    // Phân tích lỗi từ máy chủ để gán chính xác vào từng trường
+    const errors: string[] = err.errors || (err.message ? [err.message] : []);
+    let hasMappedField = false;
+
+    errors.forEach((msg) => {
+      const lower = msg.toLowerCase();
+      if (lower.includes('tên đăng nhập') || lower.includes('username')) {
+        registerErrors.username = msg;
+        hasMappedField = true;
+      } else if (lower.includes('email')) {
+        registerErrors.email = msg;
+        hasMappedField = true;
+      } else if (lower.includes('mật khẩu') || lower.includes('password')) {
+        registerErrors.password = msg;
+        hasMappedField = true;
+      } else if (lower.includes('xác nhận')) {
+        registerErrors.confirmPassword = msg;
+        hasMappedField = true;
+      }
+    });
+
+    if (!hasMappedField) {
+      registerErrors.general = err.message || 'Đăng ký tài khoản không thành công.';
+    }
   } finally {
+    // Luôn mở lại nút khi có lỗi
     isSubmitting.value = false;
     appStore.setLoading(false);
   }
 }
 
 function fillDemo(userType: 'red' | 'black') {
+  clearLoginErrors();
   if (userType === 'red') {
-    loginForm.value.usernameOrEmail = 'player_red_demo';
-    loginForm.value.password = 'Password123!';
+    loginForm.usernameOrEmail = 'player_red_demo';
+    loginForm.password = 'Password123!';
   } else {
-    loginForm.value.usernameOrEmail = 'player_black_demo';
-    loginForm.value.password = 'Password123!';
+    loginForm.usernameOrEmail = 'player_black_demo';
+    loginForm.password = 'Password123!';
   }
 }
 </script>
@@ -131,132 +266,234 @@ function fillDemo(userType: 'red' | 'black') {
       <div class="card-header">
         <div class="chess-badge">帥</div>
         <h1 class="title-serif">KỲ ĐẠO TINH HOA</h1>
-        <p class="subtitle">Đăng nhập để vào sảnh cờ và bắt đầu ván đấu</p>
+        <p class="subtitle">Nền tảng Cờ Tướng trực tuyến kết nối kỳ thủ bốn phương</p>
       </div>
 
-      <!-- Tabs chuyển đổi -->
+      <!-- Tabs Chuyển Đổi Đăng Nhập / Đăng Ký -->
       <div class="tab-switcher">
         <button
+          type="button"
           class="tab-btn"
           :class="{ active: activeTab === 'login' }"
-          @click="activeTab = 'login'; formError = null"
+          @click="switchTab('login')"
         >
           Đăng Nhập
         </button>
         <button
+          type="button"
           class="tab-btn"
           :class="{ active: activeTab === 'register' }"
-          @click="activeTab = 'register'; formError = null"
+          @click="switchTab('register')"
         >
           Đăng Ký
         </button>
       </div>
 
-      <!-- Thông báo lỗi form -->
-      <div v-if="formError" class="form-error-alert">
-        <span>⚠️ {{ formError }}</span>
-      </div>
+      <!-- ================= FORM ĐĂNG NHẬP ================= -->
+      <form v-if="activeTab === 'login'" @submit.prevent="handleLogin" class="auth-form" novalidate>
+        <!-- Lỗi chung toàn form -->
+        <div v-if="loginErrors.general" class="form-error-alert">
+          <span>⚠️ {{ loginErrors.general }}</span>
+        </div>
 
-      <!-- Form Đăng Nhập -->
-      <form v-if="activeTab === 'login'" @submit.prevent="handleLogin" class="auth-form">
+        <!-- Ô Tên đăng nhập / Email -->
         <div class="form-group">
-          <label class="form-label">Tên đăng nhập hoặc Email</label>
+          <label class="form-label" for="login-username">
+            Tên đăng nhập hoặc Email <span class="required-star">*</span>
+          </label>
           <input
+            id="login-username"
             v-model="loginForm.usernameOrEmail"
             type="text"
             class="form-input"
-            placeholder="vd: player_red_demo"
-            required
+            :class="{ 'has-error': !!loginErrors.usernameOrEmail }"
+            placeholder="Nhập tên đăng nhập hoặc email..."
+            autocomplete="username"
+            :disabled="isSubmitting"
+            @input="clearLoginErrors('usernameOrEmail')"
           />
+          <span v-if="loginErrors.usernameOrEmail" class="field-error-msg">
+            ⚠️ {{ loginErrors.usernameOrEmail }}
+          </span>
         </div>
 
+        <!-- Ô Mật khẩu -->
         <div class="form-group">
-          <label class="form-label">Mật khẩu</label>
+          <label class="form-label" for="login-password">
+            Mật khẩu <span class="required-star">*</span>
+          </label>
           <input
+            id="login-password"
             v-model="loginForm.password"
             type="password"
             class="form-input"
+            :class="{ 'has-error': !!loginErrors.password }"
             placeholder="••••••••"
-            required
+            autocomplete="current-password"
+            :disabled="isSubmitting"
+            @input="clearLoginErrors('password')"
           />
+          <span v-if="loginErrors.password" class="field-error-msg">
+            ⚠️ {{ loginErrors.password }}
+          </span>
         </div>
 
-        <button type="submit" class="btn btn-primary btn-block" :disabled="isSubmitting">
-          {{ isSubmitting ? 'Đang đăng nhập...' : 'Vào Sảnh Cờ ➔' }}
+        <!-- Nút Đăng Nhập (Khóa khi đang gửi & Chống click liên tục) -->
+        <button
+          type="submit"
+          class="btn btn-primary btn-block"
+          :disabled="isSubmitting"
+          :class="{ 'btn-submitting': isSubmitting }"
+        >
+          <span v-if="isSubmitting" class="spinner-icon animate-spin">🔄</span>
+          <span>{{ isSubmitting ? 'Đang xác thực thông tin...' : 'Đăng Nhập Vào Sảnh ➔' }}</span>
         </button>
 
-        <!-- Nút nhanh điền tài khoản mẫu -->
+        <!-- Điền nhanh tài khoản mẫu -->
         <div class="demo-quick-fill">
-          <span class="demo-label">Tài khoản thử nghiệm:</span>
+          <span class="demo-label">Tài khoản thử nghiệm sẵn có:</span>
           <div class="demo-buttons">
-            <button type="button" class="btn btn-secondary btn-sm" @click="fillDemo('red')">
-              🔴 Kỳ Thủ Đỏ
+            <button
+              type="button"
+              class="btn btn-secondary btn-sm"
+              :disabled="isSubmitting"
+              @click="fillDemo('red')"
+            >
+              🔴 Kỳ Thủ Đỏ Demo
             </button>
-            <button type="button" class="btn btn-secondary btn-sm" @click="fillDemo('black')">
-              ⚫ Kỳ Thủ Đen
+            <button
+              type="button"
+              class="btn btn-secondary btn-sm"
+              :disabled="isSubmitting"
+              @click="fillDemo('black')"
+            >
+              ⚫ Kỳ Thủ Đen Demo
             </button>
           </div>
         </div>
       </form>
 
-      <!-- Form Đăng Ký -->
-      <form v-else @submit.prevent="handleRegister" class="auth-form">
+      <!-- ================= FORM ĐĂNG KÝ ================= -->
+      <form v-else @submit.prevent="handleRegister" class="auth-form" novalidate>
+        <!-- Lỗi chung toàn form -->
+        <div v-if="registerErrors.general" class="form-error-alert">
+          <span>⚠️ {{ registerErrors.general }}</span>
+        </div>
+
+        <!-- Ô Tên đăng nhập -->
         <div class="form-group">
-          <label class="form-label">Tên đăng nhập</label>
+          <label class="form-label" for="reg-username">
+            Tên đăng nhập <span class="required-star">*</span>
+          </label>
           <input
+            id="reg-username"
             v-model="registerForm.username"
             type="text"
             class="form-input"
-            placeholder="Chữ cái, số và dấu gạch dưới (3-30 ký tự)"
-            required
+            :class="{ 'has-error': !!registerErrors.username }"
+            placeholder="vd: ky_thu_2026 (3-30 ký tự)"
+            autocomplete="username"
+            :disabled="isSubmitting"
+            @input="clearRegisterErrors('username')"
           />
+          <span v-if="registerErrors.username" class="field-error-msg">
+            ⚠️ {{ registerErrors.username }}
+          </span>
         </div>
 
+        <!-- Ô Email -->
         <div class="form-group">
-          <label class="form-label">Địa chỉ Email</label>
+          <label class="form-label" for="reg-email">
+            Địa chỉ Email <span class="required-star">*</span>
+          </label>
           <input
+            id="reg-email"
             v-model="registerForm.email"
             type="email"
             class="form-input"
-            placeholder="user@example.com"
-            required
+            :class="{ 'has-error': !!registerErrors.email }"
+            placeholder="vd: kythu@example.com"
+            autocomplete="email"
+            :disabled="isSubmitting"
+            @input="clearRegisterErrors('email')"
           />
+          <span v-if="registerErrors.email" class="field-error-msg">
+            ⚠️ {{ registerErrors.email }}
+          </span>
         </div>
 
+        <!-- Ô Tên hiển thị -->
         <div class="form-group">
-          <label class="form-label">Tên hiển thị (Tùy chọn)</label>
+          <label class="form-label" for="reg-displayname">
+            Tên hiển thị <span class="optional-tag">(Tùy chọn)</span>
+          </label>
           <input
+            id="reg-displayname"
             v-model="registerForm.displayName"
             type="text"
             class="form-input"
+            :class="{ 'has-error': !!registerErrors.displayName }"
             placeholder="vd: Kỳ Vương Phương Nam"
+            autocomplete="nickname"
+            :disabled="isSubmitting"
+            @input="clearRegisterErrors('displayName')"
           />
+          <span v-if="registerErrors.displayName" class="field-error-msg">
+            ⚠️ {{ registerErrors.displayName }}
+          </span>
         </div>
 
+        <!-- Ô Mật khẩu -->
         <div class="form-group">
-          <label class="form-label">Mật khẩu</label>
+          <label class="form-label" for="reg-password">
+            Mật khẩu bảo mật <span class="required-star">*</span>
+          </label>
           <input
+            id="reg-password"
             v-model="registerForm.password"
             type="password"
             class="form-input"
-            placeholder="Ít nhất 8 ký tự, gồm hoa, thường, số, ký tự đặc biệt"
-            required
+            :class="{ 'has-error': !!registerErrors.password }"
+            placeholder="Tối thiểu 8 ký tự, gồm chữ hoa, thường, số và ký tự đặc biệt"
+            autocomplete="new-password"
+            :disabled="isSubmitting"
+            @input="clearRegisterErrors('password')"
           />
+          <span v-if="registerErrors.password" class="field-error-msg">
+            ⚠️ {{ registerErrors.password }}
+          </span>
         </div>
 
+        <!-- Ô Xác nhận mật khẩu -->
         <div class="form-group">
-          <label class="form-label">Xác nhận mật khẩu</label>
+          <label class="form-label" for="reg-confirm-password">
+            Xác nhận mật khẩu <span class="required-star">*</span>
+          </label>
           <input
+            id="reg-confirm-password"
             v-model="registerForm.confirmPassword"
             type="password"
             class="form-input"
-            placeholder="Nhập lại mật khẩu"
-            required
+            :class="{ 'has-error': !!registerErrors.confirmPassword }"
+            placeholder="Nhập lại chính xác mật khẩu ở trên"
+            autocomplete="new-password"
+            :disabled="isSubmitting"
+            @input="clearRegisterErrors('confirmPassword')"
           />
+          <span v-if="registerErrors.confirmPassword" class="field-error-msg">
+            ⚠️ {{ registerErrors.confirmPassword }}
+          </span>
         </div>
 
-        <button type="submit" class="btn btn-primary btn-block" :disabled="isSubmitting">
-          {{ isSubmitting ? 'Đang tạo...' : 'Tạo Tài Khoản ➔' }}
+        <!-- Nút Đăng Ký (Khóa khi đang gửi & Chống click liên tục) -->
+        <button
+          type="submit"
+          class="btn btn-primary btn-block"
+          :disabled="isSubmitting"
+          :class="{ 'btn-submitting': isSubmitting }"
+        >
+          <span v-if="isSubmitting" class="spinner-icon animate-spin">🔄</span>
+          <span>{{ isSubmitting ? 'Đang khởi tạo tài khoản...' : 'Tạo Tài Khoản Mới ➔' }}</span>
         </button>
       </form>
     </div>
@@ -274,7 +511,7 @@ function fillDemo(userType: 'red' | 'black') {
 
 .login-card {
   width: 100%;
-  max-width: 460px;
+  max-width: 480px;
   padding: 36px 32px;
   border-radius: var(--radius-lg);
   border: 1px solid rgba(220, 38, 38, 0.3);
@@ -308,7 +545,7 @@ function fillDemo(userType: 'red' | 'black') {
 }
 
 .subtitle {
-  font-size: 0.875rem;
+  font-size: 0.85rem;
   color: var(--text-muted);
   margin-top: 4px;
 }
@@ -342,6 +579,42 @@ function fillDemo(userType: 'red' | 'black') {
   box-shadow: 0 2px 8px var(--red-glow);
 }
 
+.form-group {
+  margin-bottom: 16px;
+}
+
+.form-label {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.required-star {
+  color: #ef4444;
+}
+
+.optional-tag {
+  color: var(--text-dim);
+  font-size: 0.75rem;
+  font-weight: normal;
+}
+
+.form-input.has-error {
+  border-color: #ef4444;
+  background: rgba(239, 68, 68, 0.05);
+  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.3);
+}
+
+.field-error-msg {
+  display: block;
+  font-size: 0.8rem;
+  color: #f87171;
+  margin-top: 5px;
+  line-height: 1.3;
+}
+
 .form-error-alert {
   padding: 10px 14px;
   background: rgba(220, 38, 38, 0.15);
@@ -356,7 +629,17 @@ function fillDemo(userType: 'red' | 'black') {
   width: 100%;
   padding: 12px;
   font-size: 1rem;
-  margin-top: 8px;
+  margin-top: 10px;
+}
+
+.btn-submitting {
+  opacity: 0.8;
+  cursor: not-allowed;
+}
+
+.spinner-icon {
+  display: inline-block;
+  margin-right: 6px;
 }
 
 .demo-quick-fill {

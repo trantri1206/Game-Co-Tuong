@@ -96,7 +96,95 @@ try
         return;
     }
 
+    if (arg == "--server")
+    {
+        Console.WriteLine("\n[WEB SERVER] Đang khởi động Backend API Server...");
+        var builder = WebApplication.CreateBuilder(args);
+
+        builder.Services.AddDbContext<CoTuongDbContext>(opt => opt.UseSqlServer(connectionString));
+        builder.Services.AddSingleton<IPasswordHasher, BCryptPasswordHasher>();
+        builder.Services.AddSingleton<ITokenBlacklistService, TokenBlacklistService>();
+        builder.Services.AddSingleton<IJwtService, JwtService>();
+        builder.Services.AddScoped<IAuthService, AuthService>();
+        builder.Services.AddScoped<IUserService, UserService>();
+
+        builder.Services.AddCors(options =>
+        {
+            options.AddDefaultPolicy(policy =>
+            {
+                policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod();
+            });
+        });
+
+        var app = builder.Build();
+        app.UseCors();
+
+        // 1. API Đăng Ký
+        app.MapPost("/api/auth/register", async (RegisterRequest req, IAuthService auth) =>
+        {
+            var result = await auth.RegisterAsync(req);
+            if (!result.IsSuccess)
+            {
+                return Results.BadRequest(new { success = false, message = "Dữ liệu không hợp lệ hoặc tài khoản đã tồn tại.", errors = result.Errors });
+            }
+            return Results.Ok(new { success = true, user = result.Data });
+        });
+
+        // 2. API Đăng Nhập
+        app.MapPost("/api/auth/login", async (LoginRequest req, IAuthService auth) =>
+        {
+            var result = await auth.LoginAsync(req);
+            if (!result.IsSuccess)
+            {
+                return Results.Json(new { success = false, message = result.Message }, statusCode: 401);
+            }
+            return Results.Ok(new { success = true, token = result.Token, user = result.User });
+        });
+
+        // 3. API Hồ Sơ
+        app.MapGet("/api/auth/profile", async (HttpContext ctx, IUserService userService, IJwtService jwt) =>
+        {
+            var authHeader = ctx.Request.Headers["Authorization"].FirstOrDefault();
+            if (string.IsNullOrEmpty(authHeader) || !authHeader.StartsWith("Bearer "))
+                return Results.Unauthorized();
+
+            var token = authHeader.Substring("Bearer ".Length).Trim();
+            if (!jwt.ValidateToken(token, out var principal, out _) || principal == null)
+                return Results.Unauthorized();
+
+            var profile = await userService.GetProfileAsync(principal);
+            return profile == null ? Results.NotFound() : Results.Ok(profile);
+        });
+
+        // 4. API Đăng Xuất
+        app.MapPost("/api/auth/logout", async (HttpContext ctx, LogoutRequest req, IUserService userService, IJwtService jwt) =>
+        {
+            var authHeader = ctx.Request.Headers["Authorization"].FirstOrDefault();
+            if (string.IsNullOrEmpty(authHeader) || !authHeader.StartsWith("Bearer "))
+                return Results.Unauthorized();
+
+            var token = authHeader.Substring("Bearer ".Length).Trim();
+            if (!jwt.ValidateToken(token, out var principal, out _) || principal == null)
+                return Results.Unauthorized();
+
+            var result = await userService.LogoutAsync(principal, req, token);
+            if (!result.IsSuccess)
+            {
+                return Results.BadRequest(new { success = false, message = result.Message, requiresConfirmation = result.RequiresSurrenderConfirmation });
+            }
+
+            return Results.Ok(result);
+        });
+
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine("[WEB SERVER] Backend API Server đang lắng nghe tại http://localhost:5000");
+        Console.ResetColor();
+        await app.RunAsync("http://localhost:5000");
+        return;
+    }
+
     Console.WriteLine("\nCác lệnh khả dụng:");
+    Console.WriteLine("  dotnet run -- --server            : Khởi chạy Web API Server (http://localhost:5000)");
     Console.WriteLine("  dotnet test                       : Chạy 32 Unit/Integration Tests tự động (xUnit - GCT-31)");
     Console.WriteLine("  dotnet run -- --test-all          : Chạy toàn bộ kiểm thử tài khoản & phân quyền (GCT-31)");
     Console.WriteLine("  dotnet run -- --test-session      : Kiểm thử Hồ sơ & Chính sách Đăng xuất (GCT-30)");

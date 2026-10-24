@@ -19,6 +19,7 @@ export interface ApiClientError {
   isTimeout: boolean;
   canRetry: boolean;
   endpoint: string;
+  errors?: string[];
 }
 
 export const apiClient: AxiosInstance = axios.create({
@@ -91,9 +92,6 @@ apiClient.interceptors.response.use(
 
       // Thông báo cho giao diện biết đang thử lại để không bị kẹt
       appStore.setApiState('retrying', null, config._retryCount);
-      console.warn(
-        `[API Client] Tự động thử lại lần ${config._retryCount}/${apiConfig.maxRetries} sau ${waitTime}ms cho ${config.url}`
-      );
 
       await delay(waitTime);
       return apiClient(config);
@@ -121,11 +119,13 @@ apiClient.interceptors.response.use(
       currentRetry
     );
 
-    // Xử lý riêng cho 401 Unauthorized (Phiên hết hạn hoặc bị thu hồi)
-    if (normalized.statusCode === 401) {
+    // Xử lý riêng cho 401 Unauthorized khi đang dùng session cũ (không phải lúc đang login)
+    if (normalized.statusCode === 401 && !config.url?.includes('/auth/login')) {
       const authStore = useAuthStore();
-      authStore.clearAuth();
-      appStore.notify('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.', 'warning');
+      if (authStore.isAuthenticated) {
+        authStore.clearAuth();
+        appStore.notify('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.', 'warning');
+      }
     }
 
     return Promise.reject(normalized);
@@ -139,6 +139,9 @@ function normalizeError(error: AxiosError<any>, url = ''): ApiClientError {
   const isTimeout = error.code === 'ECONNABORTED' || error.message.toLowerCase().includes('timeout');
   const isNetworkError = !error.response && !!error.request;
   const canRetry = isNetworkError || isTimeout || (statusCode ? statusCode >= 500 : false);
+  const errorList = error.response?.data?.errors && Array.isArray(error.response.data.errors)
+    ? (error.response.data.errors as string[])
+    : undefined;
 
   if (isTimeout) {
     message = `Yêu cầu máy chủ quá thời gian chờ (${apiConfig.timeoutMs / 1000}s). Vui lòng thử lại.`;
@@ -146,12 +149,12 @@ function normalizeError(error: AxiosError<any>, url = ''): ApiClientError {
     message = `Không thể kết nối đến máy chủ tại ${apiConfig.baseUrl}. Vui lòng kiểm tra mạng hoặc dịch vụ backend.`;
   } else if (error.response?.data?.message) {
     message = error.response.data.message;
-  } else if (error.response?.data?.errors && Array.isArray(error.response.data.errors)) {
-    message = error.response.data.errors.join(', ');
+  } else if (errorList && errorList.length > 0) {
+    message = errorList.join(', ');
   } else if (statusCode === 400) {
     message = 'Dữ liệu yêu cầu không hợp lệ.';
   } else if (statusCode === 401) {
-    message = 'Bạn chưa đăng nhập hoặc phiên làm việc đã hết hạn.';
+    message = 'Tên đăng nhập hoặc mật khẩu không chính xác.';
   } else if (statusCode === 403) {
     message = 'Bạn không có quyền thực hiện thao tác này.';
   } else if (statusCode === 404) {
@@ -166,6 +169,8 @@ function normalizeError(error: AxiosError<any>, url = ''): ApiClientError {
     isNetworkError,
     isTimeout,
     canRetry,
-    endpoint: url
+    endpoint: url,
+    errors: errorList
   };
 }
+
