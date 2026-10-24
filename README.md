@@ -175,3 +175,27 @@ dotnet run -- --test-constraints
 # Hoặc:
 dotnet .\bin\Debug\net10.0\GameCoTuong.dll --test-constraints
 ```
+
+---
+
+## 11. Bộ Kiểm Thử Tự Động & Độc Lập Dữ Liệu (GCT-31)
+
+Dự án cung cấp bộ kiểm thử tự động toàn diện đáp ứng trọn vẹn yêu cầu **GCT-31**:
+* **Dữ liệu độc lập và lặp lại được (Idempotent / Isolated Data)**: Sử dụng In-Memory Database với database name ngẫu nhiên (`Guid.NewGuid()`) cho mỗi test runner và test case, đảm bảo các ca kiểm thử chạy song song hoặc chạy lặp lại vô hạn lần mà không bao giờ bị phụ thuộc trạng thái hay xung đột dữ liệu.
+* **Bộ kiểm thử xUnit chuẩn công nghiệp**: Nằm trong project `tests/GameCoTuong.Tests/` bao gồm **32 unit test**:
+  * **`RegisterTests.cs` (13 tests)**: Thử thông tin đúng, 10 trường hợp sai định dạng (tên ngắn, email sai cú pháp, thiếu ký tự hoa/thường/số/đặc biệt, mật khẩu không khớp), chặn trùng tên/email bất kể chữ hoa thường, và giả lập 2 yêu cầu đăng ký đồng thời (concurrency test).
+  * **`LoginAndTokenTests.cs` (7 tests)**: Đăng nhập bằng username, email, mật khẩu sai, tài khoản không tồn tại (chống User Enumeration), kiểm tra chữ ký token bị sửa đổi (Tampered Token), token hết hạn (Expired Token) và token bị thu hồi (Revoked/Blacklisted Token).
+  * **`AuthorizationTests.cs` (4 tests)**: Người ngoài phòng bị chặn mọi hành vi (403 Forbidden), khán giả trong phòng bị chặn đi quân, kỳ thủ hợp lệ được phép thao tác, và phát hiện chặn đứng hành vi giả mạo ID người dùng.
+  * **`SecurityAndPrivacyTests.cs` (8 tests)**: Xác nhận đối tượng phản hồi (`UserResponse`, `LoginResponse`) tuyệt đối không chứa `password` hay `passwordHash`, kiểm tra bộ lọc nhật ký (`LogSanitizer`) che giấu hoàn toàn token bí mật (`[REDACTED]`), và kiểm thử logic đầu hàng khi đang chơi.
+
+### Cách 1: Chạy toàn bộ 32 test bằng xUnit Runner
+```bash
+dotnet test GameCoTuong.slnx
+```
+
+### Cách 2: Chạy trực quan toàn bộ kịch bản kiểm thử qua CLI
+```bash
+dotnet run -- --test-all
+# Hoặc:
+dotnet .\bin\Debug\net10.0\GameCoTuong.dll --test-all
+```
