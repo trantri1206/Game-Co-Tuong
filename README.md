@@ -85,21 +85,46 @@ dotnet run -- --seed
 
 ---
 
-## 7. Kiểm Thử Hệ Thống
+## 7. Tính Năng Đăng Nhập & Cấp Phiên Truy Cập JWT (GCT-28)
 
-### A. Kiểm thử toàn diện tính năng Đăng Ký (GCT-27)
+### Cơ chế hoạt động:
+* **Hỗ trợ linh hoạt**: Đăng nhập bằng **Tên đăng nhập** hoặc **Email**.
+* **Xác thực an toàn**: Sử dụng `BCrypt.Verify` đối chiếu mật khẩu với mã băm trong Database.
+* **Chống tấn công dò quét (User Enumeration)**: Dù sai tên đăng nhập hay sai mật khẩu, hệ thống đều trả về **một thông báo lỗi thống nhất duy nhất**: `"Tên đăng nhập hoặc mật khẩu không chính xác."`.
+* **Cấp phát JWT (JSON Web Token)**:
+  * **Payload (Claims)**: Chứa định danh `UserId`, `Username`, `Email`, `DisplayName`, và mã `jti`.
+  * **Chữ ký số**: Thuật toán `HmacSha256` với khóa bí mật cấu hình trong `appsettings.json`.
+  * **Thời hạn (Expiry)**: Thời gian hết hạn cụ thể (mặc định 60 phút).
+* **Kiểm tra tính toàn vẹn (Token Validation)**:
+  * Từ chối token nếu chữ ký không khớp hoặc token bị sửa đổi bất kỳ ký tự nào (Tampered token).
+  * Từ chối token nếu đã quá hạn sử dụng (Lifetime verification, không có độ trễ clock skew).
+
+---
+
+## 8. Kiểm Thử Hệ Thống
+
+### A. Kiểm thử toàn diện Đăng Nhập & Cấp JWT (GCT-28)
+```bash
+dotnet run -- --test-login
+# Hoặc nếu môi trường chặn thực thi file exe trực tiếp:
+dotnet .\bin\Debug\net10.0\GameCoTuong.dll --test-login
+```
+Kịch bản kiểm thử tự động gồm 6 phần:
+1. **Đăng nhập đúng bằng Username**: Nhận JWT hợp lệ, giải mã đúng danh tính kỳ thủ (Claims).
+2. **Đăng nhập đúng bằng Email**: Không phân biệt chữ hoa/thường, cấp token thành công.
+3. **Đăng nhập sai mật khẩu**: Bị từ chối với thông báo lỗi thống nhất.
+4. **Đăng nhập tài khoản không tồn tại**: Bị từ chối với cùng thông báo lỗi thống nhất (chống dò tài khoản).
+5. **Token bị sửa đổi (Tampered)**: Sửa 1 vài ký tự trong token $\rightarrow$ Bị từ chối do sai chữ ký số.
+6. **Token hết hạn (Expired)**: Kiểm tra token tạo trong quá khứ $\rightarrow$ Bị từ chối do quá hạn phiên.
+
+### B. Kiểm thử toàn diện Đăng Ký Tài Khoản (GCT-27)
 ```bash
 dotnet run -- --test-register
-# Hoặc nếu môi trường chặn thực thi file exe trực tiếp:
+# Hoặc:
 dotnet .\bin\Debug\net10.0\GameCoTuong.dll --test-register
 ```
-Kịch bản kiểm thử tự động gồm 4 phần:
-1. **Kiểm tra dữ liệu sai**: Báo lỗi chi tiết với từng trường (tên ngắn, email sai định dạng, mật khẩu yếu...).
-2. **Đăng ký hợp lệ**: Băm mật khẩu bằng BCrypt, phản hồi an toàn không lộ Password/PasswordHash.
-3. **Chặn trùng khác hoa thường**: Thử tạo lại với chữ in hoa `PLAYER_...` và email `...@EXAMPLE.COM`.
-4. **Kiểm thử gửi đồng thời**: 10 luồng gửi đăng ký cùng 1 lúc $\rightarrow$ Đúng 1 tài khoản thành công, 9 luồng bị chặn an toàn.
 
-### B. Kiểm thử ràng buộc Unique Database (GCT-26)
+### C. Kiểm thử ràng buộc Unique Database (GCT-26)
 ```bash
 dotnet run -- --test-constraints
 # Hoặc:

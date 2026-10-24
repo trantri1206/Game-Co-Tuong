@@ -10,6 +10,7 @@ public class AuthService : IAuthService
 {
     private readonly CoTuongDbContext _context;
     private readonly IPasswordHasher _passwordHasher;
+    private readonly IJwtService _jwtService;
 
     // Regex kiểm tra tên đăng nhập: 3-30 ký tự, chỉ chứa chữ cái, chữ số và dấu gạch dưới
     private static readonly Regex UsernameRegex = new(@"^[a-zA-Z0-9_]{3,30}$", RegexOptions.Compiled);
@@ -17,10 +18,11 @@ public class AuthService : IAuthService
     // Regex kiểm tra email chuẩn
     private static readonly Regex EmailRegex = new(@"^[^@\s]+@[^@\s]+\.[^@\s]+$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-    public AuthService(CoTuongDbContext context, IPasswordHasher passwordHasher)
+    public AuthService(CoTuongDbContext context, IPasswordHasher passwordHasher, IJwtService jwtService)
     {
         _context = context;
         _passwordHasher = passwordHasher;
+        _jwtService = jwtService;
     }
 
     public async Task<RegisterResult> RegisterAsync(RegisterRequest request)
@@ -95,6 +97,47 @@ public class AuthService : IAuthService
         };
 
         return RegisterResult.Success(responseDto, "Đăng ký tài khoản thành công.");
+    }
+
+    public async Task<LoginResult> LoginAsync(LoginRequest request)
+    {
+        if (request == null || string.IsNullOrWhiteSpace(request.UsernameOrEmail) || string.IsNullOrEmpty(request.Password))
+        {
+            return LoginResult.InvalidCredentials();
+        }
+
+        // Chuẩn hóa tên/email đầu vào
+        var normalized = request.UsernameOrEmail.Trim().ToLowerInvariant();
+
+        // Tìm người dùng theo Username hoặc Email (Case-insensitive)
+        var user = await _context.Users.FirstOrDefaultAsync(u => u.Username.ToLower() == normalized || u.Email.ToLower() == normalized);
+        if (user == null)
+        {
+            // Trả thông báo lỗi thống nhất để chống User Enumeration attack
+            return LoginResult.InvalidCredentials();
+        }
+
+        // Kiểm tra mật khẩu đã băm bằng BCrypt
+        var isPasswordValid = _passwordHasher.VerifyPassword(request.Password, user.PasswordHash);
+        if (!isPasswordValid)
+        {
+            // Trả cùng một thông báo lỗi thống nhất như khi không tìm thấy tài khoản
+            return LoginResult.InvalidCredentials();
+        }
+
+        // Cấp phiên truy cập (JWT token) có danh tính, chữ ký HmacSha256 và thời hạn
+        var (token, expiresAt) = _jwtService.GenerateToken(user);
+
+        var userResponse = new UserResponse
+        {
+            UserId = user.UserId,
+            Username = user.Username,
+            Email = user.Email,
+            DisplayName = user.DisplayName,
+            CreatedAt = user.CreatedAt
+        };
+
+        return LoginResult.Success(token, expiresAt, userResponse);
     }
 
     private static List<string> ValidateRequest(RegisterRequest request)

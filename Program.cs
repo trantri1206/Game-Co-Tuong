@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using GameCoTuong.Data;
 using GameCoTuong.Data.Seed;
 using GameCoTuong.DTOs;
@@ -22,17 +23,226 @@ var optionsBuilder = new DbContextOptionsBuilder<CoTuongDbContext>();
 optionsBuilder.UseSqlServer(connectionString);
 
 var passwordHasher = new BCryptPasswordHasher();
+var jwtService = new JwtService(configuration);
+
+// Helper tạo DbContext mới cho mỗi test
+CoTuongDbContext CreateContext() => new(optionsBuilder.Options);
 
 try
 {
     var arg = args.FirstOrDefault()?.ToLowerInvariant();
 
+    if (arg == "--test-login")
+    {
+        Console.WriteLine("\n================ KIỂM THỬ TÍNH NĂNG ĐĂNG NHẬP & CẤP JWT (GCT-28) ================");
+
+        // Đảm bảo có sẵn 1 tài khoản test chuẩn trong DB
+        var testUsername = "player_login_test";
+        var testEmail = "player_login_test@example.com";
+        var testPassword = "ValidPassword@2026";
+
+        using (var setupCtx = CreateContext())
+        {
+            var existing = await setupCtx.Users.FirstOrDefaultAsync(u => u.Username == testUsername);
+            if (existing == null)
+            {
+                var auth = new AuthService(setupCtx, passwordHasher, jwtService);
+                await auth.RegisterAsync(new RegisterRequest
+                {
+                    Username = testUsername,
+                    Email = testEmail,
+                    Password = testPassword,
+                    ConfirmPassword = testPassword,
+                    DisplayName = "Kỳ Thủ Đăng Nhập Test"
+                });
+            }
+        }
+
+        string validJwtToken = string.Empty;
+
+        // -------------------------------------------------------------
+        // TEST 1: Đăng nhập đúng bằng Username -> Nhận JWT hợp lệ
+        // -------------------------------------------------------------
+        Console.WriteLine("\n[TEST 1] Đăng nhập đúng bằng Tên đăng nhập (Username)...");
+        using (var ctx = CreateContext())
+        {
+            var auth = new AuthService(ctx, passwordHasher, jwtService);
+            var result = await auth.LoginAsync(new LoginRequest
+            {
+                UsernameOrEmail = testUsername,
+                Password = testPassword
+            });
+
+            if (result.IsSuccess && !string.IsNullOrEmpty(result.Token) && result.User != null)
+            {
+                validJwtToken = result.Token;
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine("-> THÀNH CÔNG: Đăng nhập thành công và cấp JWT token hợp lệ!");
+                Console.WriteLine($"   * Token (Cắt ngắn): {result.Token[..35]}...");
+                Console.WriteLine($"   * Thời hạn hết hạn: {result.ExpiresAt:yyyy-MM-dd HH:mm:ss} UTC");
+                Console.WriteLine($"   * Kỳ thủ: {result.User.DisplayName} ({result.User.Username})");
+
+                // Giải mã và kiểm tra Claims trong Token
+                if (jwtService.ValidateToken(result.Token, out var principal, out var valError) && principal != null)
+                {
+                    var nameId = principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                    var name = principal.FindFirst(ClaimTypes.Name)?.Value;
+                    var email = principal.FindFirst(ClaimTypes.Email)?.Value;
+                    Console.WriteLine($"   * Kiểm tra Claims trong Token: UserId={nameId}, Name={name}, Email={email}");
+                }
+                Console.ResetColor();
+            }
+            else
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine($"-> THẤT BẠI: Đăng nhập không thành công ({result.Message})");
+                Console.ResetColor();
+            }
+        }
+
+        // -------------------------------------------------------------
+        // TEST 2: Đăng nhập đúng bằng Email -> Nhận JWT hợp lệ
+        // -------------------------------------------------------------
+        Console.WriteLine("\n[TEST 2] Đăng nhập đúng bằng Email...");
+        using (var ctx = CreateContext())
+        {
+            var auth = new AuthService(ctx, passwordHasher, jwtService);
+            var result = await auth.LoginAsync(new LoginRequest
+            {
+                UsernameOrEmail = testEmail.ToUpperInvariant(), // Test không phân biệt hoa thường
+                Password = testPassword
+            });
+
+            if (result.IsSuccess && !string.IsNullOrEmpty(result.Token))
+            {
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine("-> THÀNH CÔNG: Đăng nhập bằng Email (kể cả viết hoa) thành công!");
+                Console.ResetColor();
+            }
+            else
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine($"-> THẤT BẠI: Đăng nhập bằng Email thất bại ({result.Message})");
+                Console.ResetColor();
+            }
+        }
+
+        // -------------------------------------------------------------
+        // TEST 3: Đăng nhập sai mật khẩu -> Trả lỗi thống nhất
+        // -------------------------------------------------------------
+        Console.WriteLine("\n[TEST 3] Đăng nhập sai mật khẩu...");
+        using (var ctx = CreateContext())
+        {
+            var auth = new AuthService(ctx, passwordHasher, jwtService);
+            var result = await auth.LoginAsync(new LoginRequest
+            {
+                UsernameOrEmail = testUsername,
+                Password = "WrongPassword@123"
+            });
+
+            if (!result.IsSuccess && result.Token == null && result.Message == "Tên đăng nhập hoặc mật khẩu không chính xác.")
+            {
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine($"-> THÀNH CÔNG: Đã từ chối và trả thông báo lỗi thống nhất: '{result.Message}'");
+                Console.ResetColor();
+            }
+            else
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("-> THẤT BẠI: Không chặn mật khẩu sai hoặc thông báo không chuẩn!");
+                Console.ResetColor();
+            }
+        }
+
+        // -------------------------------------------------------------
+        // TEST 4: Đăng nhập tài khoản không tồn tại -> Trả cùng lỗi thống nhất
+        // -------------------------------------------------------------
+        Console.WriteLine("\n[TEST 4] Đăng nhập với tài khoản không tồn tại...");
+        using (var ctx = CreateContext())
+        {
+            var auth = new AuthService(ctx, passwordHasher, jwtService);
+            var result = await auth.LoginAsync(new LoginRequest
+            {
+                UsernameOrEmail = "non_existent_user_99999",
+                Password = testPassword
+            });
+
+            if (!result.IsSuccess && result.Token == null && result.Message == "Tên đăng nhập hoặc mật khẩu không chính xác.")
+            {
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine($"-> THÀNH CÔNG: Chống User Enumeration - Trả cùng thông báo lỗi thống nhất: '{result.Message}'");
+                Console.ResetColor();
+            }
+            else
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("-> THẤT BẠI: Lộ thông tin tài khoản tồn tại hay không!");
+                Console.ResetColor();
+            }
+        }
+
+        // -------------------------------------------------------------
+        // TEST 5: Kiểm tra Token bị chỉnh sửa (Tampered Token)
+        // -------------------------------------------------------------
+        Console.WriteLine("\n[TEST 5] Kiểm tra Token bị sửa đổi (Tampered Token)...");
+        if (!string.IsNullOrEmpty(validJwtToken))
+        {
+            // Sửa đổi một vài ký tự trong token
+            var tamperedToken = validJwtToken[..^4] + "X9Y8";
+            var isValid = jwtService.ValidateToken(tamperedToken, out _, out var tamperedError);
+
+            if (!isValid)
+            {
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine($"-> THÀNH CÔNG: Đã từ chối Token bị sửa đổi: {tamperedError}");
+                Console.ResetColor();
+            }
+            else
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("-> THẤT BẠI: Đã chấp nhận Token bị sửa đổi!");
+                Console.ResetColor();
+            }
+        }
+
+        // -------------------------------------------------------------
+        // TEST 6: Kiểm tra Token hết hạn (Expired Token)
+        // -------------------------------------------------------------
+        Console.WriteLine("\n[TEST 6] Kiểm tra Token đã hết hạn (Expired Token)...");
+        using (var ctx = CreateContext())
+        {
+            var dummyUser = new User
+            {
+                UserId = 999,
+                Username = "dummy",
+                Email = "dummy@example.com"
+            };
+
+            // Sinh token đã hết hạn 10 giây trước
+            var (expiredToken, _) = jwtService.GenerateToken(dummyUser, customLifetime: TimeSpan.FromSeconds(-10));
+            var isValid = jwtService.ValidateToken(expiredToken, out _, out var expiredError);
+
+            if (!isValid)
+            {
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine($"-> THÀNH CÔNG: Đã từ chối Token hết hạn: {expiredError}");
+                Console.ResetColor();
+            }
+            else
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("-> THẤT BẠI: Đã chấp nhận Token hết hạn!");
+                Console.ResetColor();
+            }
+        }
+
+        Console.WriteLine("\n================ HOÀN TẤT TẤT CẢ KIỂM THỬ (GCT-28) ================\n");
+        return;
+    }
+
     if (arg == "--test-register")
     {
         Console.WriteLine("\n================ KIỂM THỬ TÍNH NĂNG ĐĂNG KÝ (GCT-27) ================");
-
-        // Helper tạo DbContext mới cho mỗi test
-        CoTuongDbContext CreateContext() => new(optionsBuilder.Options);
 
         // -------------------------------------------------------------
         // TEST 1: Kiểm tra dữ liệu không hợp lệ (Validation)
@@ -40,7 +250,7 @@ try
         Console.WriteLine("\n[TEST 1] Kiểm tra dữ liệu sai có thông báo rõ ràng...");
         using (var ctx = CreateContext())
         {
-            var auth = new AuthService(ctx, passwordHasher);
+            var auth = new AuthService(ctx, passwordHasher, jwtService);
             var invalidRequest = new RegisterRequest
             {
                 Username = "a",                      // Quá ngắn (< 3)
@@ -75,15 +285,15 @@ try
         Console.WriteLine("\n[TEST 2] Đăng ký tài khoản hợp lệ, băm mật khẩu & kiểm tra bảo mật phản hồi...");
         var uniqueSuffix = DateTime.UtcNow.Ticks.ToString()[^6..];
         var validUsername = $"Player_{uniqueSuffix}";
-        var validEmail = $"Player_{uniqueSuffix}@Example.COM"; // Viết hoa để test chuẩn hóa
+        var validEmail = $"Player_{uniqueSuffix}@Example.COM";
         var rawPassword = "SecurePassword@123";
 
         using (var ctx = CreateContext())
         {
-            var auth = new AuthService(ctx, passwordHasher);
+            var auth = new AuthService(ctx, passwordHasher, jwtService);
             var validRequest = new RegisterRequest
             {
-                Username = $"  {validUsername}  ", // Kèm khoảng trắng để test Trim
+                Username = $"  {validUsername}  ",
                 Email = $"  {validEmail}  ",
                 Password = rawPassword,
                 ConfirmPassword = rawPassword,
@@ -101,14 +311,12 @@ try
                 Console.WriteLine($"   * Email (Đã chuẩn hóa thường): '{result.Data.Email}'");
                 Console.WriteLine($"   * DisplayName: '{result.Data.DisplayName}'");
 
-                // Kiểm tra UserResponse không có trường Password hay PasswordHash
                 var responseProps = typeof(UserResponse).GetProperties().Select(p => p.Name).ToList();
                 if (!responseProps.Contains("Password") && !responseProps.Contains("PasswordHash"))
                 {
                     Console.WriteLine("   * Bảo mật phản hồi: TUYỆT ĐỐI KHÔNG chứa Password hoặc PasswordHash trong DTO phản hồi.");
                 }
 
-                // Kiểm tra trong Database
                 var dbUser = await ctx.Users.FirstOrDefaultAsync(u => u.UserId == result.Data.UserId);
                 if (dbUser != null)
                 {
@@ -133,12 +341,11 @@ try
         Console.WriteLine("\n[TEST 3] Kiểm tra chặn trùng tên / email kể cả khác hoa thường...");
         using (var ctx = CreateContext())
         {
-            var auth = new AuthService(ctx, passwordHasher);
+            var auth = new AuthService(ctx, passwordHasher, jwtService);
 
-            // Test trùng username khác hoa thường (ví dụ: PLAYER_123456)
             var dupUsernameRequest = new RegisterRequest
             {
-                Username = validUsername.ToUpperInvariant(), // Viết hoa toàn bộ
+                Username = validUsername.ToUpperInvariant(),
                 Email = $"different_{uniqueSuffix}@example.com",
                 Password = rawPassword,
                 ConfirmPassword = rawPassword
@@ -158,7 +365,6 @@ try
                 Console.ResetColor();
             }
 
-            // Test trùng email khác hoa thường
             var dupEmailRequest = new RegisterRequest
             {
                 Username = $"different_{uniqueSuffix}",
@@ -191,9 +397,8 @@ try
 
         var tasks = Enumerable.Range(1, 10).Select(async i =>
         {
-            // Mỗi thread dùng 1 DbContext riêng biệt
             using var threadCtx = CreateContext();
-            var auth = new AuthService(threadCtx, passwordHasher);
+            var auth = new AuthService(threadCtx, passwordHasher, jwtService);
             return await auth.RegisterAsync(new RegisterRequest
             {
                 Username = concurrentUsername,
@@ -311,6 +516,7 @@ try
     }
 
     Console.WriteLine("\nCác lệnh khả dụng:");
+    Console.WriteLine("  dotnet run -- --test-login        : Kiểm thử toàn diện Đăng nhập & JWT (GCT-28)");
     Console.WriteLine("  dotnet run -- --test-register     : Kiểm thử toàn diện Đăng ký tài khoản (GCT-27)");
     Console.WriteLine("  dotnet run -- --test-constraints  : Kiểm thử các ràng buộc Unique DB (GCT-26)");
     Console.WriteLine("  dotnet run -- --seed              : Nạp dữ liệu mẫu demo");
