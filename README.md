@@ -199,3 +199,35 @@ dotnet run -- --test-all
 # Hoặc:
 dotnet .\bin\Debug\net10.0\GameCoTuong.dll --test-all
 ```
+
+---
+
+## 12. Khung Giao Diện & Kết Nối API (GCT-32)
+
+Dự án tích hợp khung giao diện **Vue 3 + Vite + TypeScript** hiện đại, kết nối tầng API backend với các đặc tính:
+
+### A. Cấu trúc định tuyến (Vue Router)
+* **`/login`** ([`LoginView.vue`](file:///src/views/LoginView.vue)): Màn hình đăng nhập & đăng ký tài khoản, hỗ trợ điền nhanh tài khoản demo.
+* **`/lobby`** ([`LobbyView.vue`](file:///src/views/LobbyView.vue)): Sảnh cờ, danh sách phòng thi đấu, bộ lọc trạng thái, tạo phòng mới và các nút kiểm thử lỗi kết nối API.
+* **`/room/:id`** ([`RoomView.vue`](file:///src/views/RoomView.vue)): Phòng cờ, vị trí Tiên cơ (Đỏ) và Hậu cơ (Đen), danh sách khán giả, trạng thái sẵn sàng và nút bắt đầu trận đấu.
+* **`/match/:id`** ([`MatchView.vue`](file:///src/views/MatchView.vue)): Ván đấu cờ tướng trực tiếp, bàn cờ, đồng hồ đếm ngược hai bên, biên bản nước đi, xin hòa và đầu hàng.
+* **`/history`** ([`HistoryView.vue`](file:///src/views/HistoryView.vue)): Lịch sử thi đấu, kết quả (Đỏ thắng / Đen thắng / Hòa), số nước đi và nút xem lại kỳ phổ.
+* **Navigation Guard**: Tự động chặn và chuyển hướng về `/login` nếu chưa có phiên hợp lệ.
+
+### B. Cơ chế API Client (Chống kẹt, Timeout & Tự động thử lại)
+* **Cấu hình tập trung**: Đọc từ biến môi trường [`.env`](file:///src/api/config.ts) (`VITE_API_BASE_URL`, `VITE_API_TIMEOUT_MS`, `VITE_API_MAX_RETRIES`).
+* **Header Interceptor**: Tự động trích xuất token từ [`useAuthStore`](file:///src/stores/auth.ts) và gắn `Authorization: Bearer <token>`.
+* **Cơ chế Retry (Exponential Backoff)**: Tự động thử lại tối đa 3 lần khi gặp sự cố mạng hoặc lỗi máy chủ tạm thời (1s $\rightarrow$ 2s $\rightarrow$ 4s).
+* **Nút Thử Lại Thủ Công**: Hiển thị thanh trạng thái kết nối [`ApiStatusBar.vue`](file:///src/components/ApiStatusBar.vue) với nút **"Thử lại ngay"** khi mất kết nối, đảm bảo ứng dụng không bao giờ bị treo hay mắc kẹt.
+
+### C. Lệnh Build & Phát Triển Frontend
+```bash
+# Cài đặt thư viện
+npm install
+
+# Kiểm tra kiểu TypeScript & Build bundle
+npm run build
+
+# Khởi chạy máy chủ phát triển frontend
+npm run dev
+```

@@ -9,3 +9,7 @@
 *.suo
 appsettings.Development.json
 .env
+.env.local
+node_modules/
+dist/
+*.tsbuildinfo
