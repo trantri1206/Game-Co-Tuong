@@ -99,32 +99,56 @@ dotnet run -- --seed
   * Từ chối token nếu chữ ký không khớp hoặc token bị sửa đổi bất kỳ ký tự nào (Tampered token).
   * Từ chối token nếu đã quá hạn sử dụng (Lifetime verification, không có độ trễ clock skew).
 
+## 8. Kiểm Tra Quyền Truy Cập API & Phòng (GCT-29)
+
+### Cơ chế bảo mật và phân quyền:
+* **Kiểm tra JWT trên API và SignalR**:
+  * API kiểm tra token từ header `Authorization: Bearer <token>`.
+  * SignalR kiểm tra token từ query parameter `?access_token=<token>` khi thiết lập kết nối WebSocket tới `/hubs/game`.
+* **Trích xuất danh tính an toàn (Chống giả mạo - Impersonation Attack)**:
+  * Tuyệt đối không tin tưởng `userId` gửi từ phía Client.
+  * Danh tính bắt buộc phải được giải mã trực tiếp từ Claims của Token (`ClaimsPrincipal.GetUserId()`).
+  * Mọi hành vi cố tình gửi `claimedUserId` khác với `UserId` trong Token đều bị chặn lập tức với mã `403 Forbidden`.
+* **Phân quyền thao tác trong phòng cờ (`RoomAuthorizationService`)**:
+  * **Thành viên phòng**: Người ngoài phòng bị chặn `403 Forbidden` đối với toàn bộ các thao tác: bắt đầu ván đấu, đi quân, đóng phòng hoặc gọi video.
+  * **Đi quân cờ**: Chỉ có kỳ thủ (phe Đỏ / Đen) trong ván đấu mới được đi quân; khán giả xem cờ trong phòng bị từ chối đi quân.
+  * **Gọi video (WebRTC Signaling)**: Chỉ thành viên có mặt trong phòng mới được phép gửi/nhận tín hiệu video.
+* **Bảo mật nhật ký (Log Sanitization)**:
+  * Tự động làm mờ toàn bộ token bí mật trong log: header `Bearer [REDACTED]` và query parameter `access_token=[REDACTED]`. Không bao giờ ghi token vào nhật ký hệ thống.
+
 ---
 
-## 8. Kiểm Thử Hệ Thống
+## 9. Kiểm Thử Hệ Thống
 
-### A. Kiểm thử toàn diện Đăng Nhập & Cấp JWT (GCT-28)
+### A. Kiểm thử toàn diện Phân Quyền API & Phòng Cờ (GCT-29)
 ```bash
-dotnet run -- --test-login
+dotnet run -- --test-authz
 # Hoặc nếu môi trường chặn thực thi file exe trực tiếp:
-dotnet .\bin\Debug\net10.0\GameCoTuong.dll --test-login
+dotnet .\bin\Debug\net10.0\GameCoTuong.dll --test-authz
 ```
 Kịch bản kiểm thử tự động gồm 6 phần:
-1. **Đăng nhập đúng bằng Username**: Nhận JWT hợp lệ, giải mã đúng danh tính kỳ thủ (Claims).
-2. **Đăng nhập đúng bằng Email**: Không phân biệt chữ hoa/thường, cấp token thành công.
-3. **Đăng nhập sai mật khẩu**: Bị từ chối với thông báo lỗi thống nhất.
-4. **Đăng nhập tài khoản không tồn tại**: Bị từ chối với cùng thông báo lỗi thống nhất (chống dò tài khoản).
-5. **Token bị sửa đổi (Tampered)**: Sửa 1 vài ký tự trong token $\rightarrow$ Bị từ chối do sai chữ ký số.
-6. **Token hết hạn (Expired)**: Kiểm tra token tạo trong quá khứ $\rightarrow$ Bị từ chối do quá hạn phiên.
+1. **Chặn thiếu hoặc sai token**: Thiếu token hoặc token sai chữ ký đều bị chặn.
+2. **Chặn giả mạo người dùng**: Phát hiện và chặn khi gửi `claimedUserId` khác với ID trong Token.
+3. **Chặn người ngoài phòng**: Bị từ chối `403 Forbidden` khi cố bắt đầu, đi quân, đóng phòng hoặc gọi video.
+4. **Chặn khán giả đi quân**: Khán giả trong phòng bị từ chối đi quân.
+5. **Đấu thủ hợp lệ**: Thực hiện đi quân và gọi video thành công.
+6. **Bảo mật nhật ký**: Token được làm mờ `[REDACTED]` khi ghi log.
 
-### B. Kiểm thử toàn diện Đăng Ký Tài Khoản (GCT-27)
+### B. Kiểm thử toàn diện Đăng Nhập & Cấp JWT (GCT-28)
+```bash
+dotnet run -- --test-login
+# Hoặc:
+dotnet .\bin\Debug\net10.0\GameCoTuong.dll --test-login
+```
+
+### C. Kiểm thử toàn diện Đăng Ký Tài Khoản (GCT-27)
 ```bash
 dotnet run -- --test-register
 # Hoặc:
 dotnet .\bin\Debug\net10.0\GameCoTuong.dll --test-register
 ```
 
-### C. Kiểm thử ràng buộc Unique Database (GCT-26)
+### D. Kiểm thử ràng buộc Unique Database (GCT-26)
 ```bash
 dotnet run -- --test-constraints
 # Hoặc:

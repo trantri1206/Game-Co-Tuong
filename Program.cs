@@ -32,6 +32,210 @@ try
 {
     var arg = args.FirstOrDefault()?.ToLowerInvariant();
 
+    if (arg == "--test-authz")
+    {
+        Console.WriteLine("\n================ KIỂM THỬ PHÂN QUYỀN API & PHÒNG CỜ (GCT-29) ================");
+
+        // Đảm bảo dữ liệu demo sẵn sàng trong DB
+        using (var setupCtx = CreateContext())
+        {
+            await DbInitializer.SeedAsync(setupCtx);
+
+            // Tạo thêm 1 người dùng ngoài phòng (Outsider) và 1 khán giả (Spectator) nếu chưa có
+            var outsider = await setupCtx.Users.FirstOrDefaultAsync(u => u.Username == "outsider_test_user");
+            if (outsider == null)
+            {
+                outsider = new User
+                {
+                    Username = "outsider_test_user",
+                    Email = "outsider@example.com",
+                    PasswordHash = passwordHasher.HashPassword("TestPass@123"),
+                    DisplayName = "Người Ngoài Phòng"
+                };
+                setupCtx.Users.Add(outsider);
+                await setupCtx.SaveChangesAsync();
+            }
+
+            var spectator = await setupCtx.Users.FirstOrDefaultAsync(u => u.Username == "spectator_test_user");
+            if (spectator == null)
+            {
+                spectator = new User
+                {
+                    Username = "spectator_test_user",
+                    Email = "spectator@example.com",
+                    PasswordHash = passwordHasher.HashPassword("TestPass@123"),
+                    DisplayName = "Khán Giả Xem Cờ"
+                };
+                setupCtx.Users.Add(spectator);
+                await setupCtx.SaveChangesAsync();
+            }
+
+            // Gán spectator vào phòng 1 nhưng KHÔNG gán vào MatchPlayers
+            var room = await setupCtx.Rooms.FirstAsync();
+            var isSpectatorInRoom = await setupCtx.RoomMembers.AnyAsync(rm => rm.RoomId == room.RoomId && rm.UserId == spectator.UserId);
+            if (!isSpectatorInRoom)
+            {
+                setupCtx.RoomMembers.Add(new RoomMember { RoomId = room.RoomId, UserId = spectator.UserId, JoinedAt = DateTime.UtcNow });
+                await setupCtx.SaveChangesAsync();
+            }
+        }
+
+        using (var ctx = CreateContext())
+        {
+            var authzService = new RoomAuthorizationService(ctx);
+            var room = await ctx.Rooms.FirstAsync();
+            var match = await ctx.Matches.FirstAsync();
+            var playerRed = await ctx.Users.FirstAsync(u => u.Username == "player_red_demo");
+            var outsider = await ctx.Users.FirstAsync(u => u.Username == "outsider_test_user");
+            var spectator = await ctx.Users.FirstAsync(u => u.Username == "spectator_test_user");
+
+            var (tokenPlayer, _) = jwtService.GenerateToken(playerRed);
+            var (tokenOutsider, _) = jwtService.GenerateToken(outsider);
+
+            jwtService.ValidateToken(tokenPlayer, out var principalPlayer, out _);
+            jwtService.ValidateToken(tokenOutsider, out var principalOutsider, out _);
+
+            // -------------------------------------------------------------
+            // TEST 1: Thiếu hoặc sai Token trên API và SignalR bị chặn
+            // -------------------------------------------------------------
+            Console.WriteLine("\n[TEST 1] Kiểm tra thiếu hoặc sai Token...");
+            var noTokenResult = jwtService.ValidateToken("", out _, out var noTokenErr);
+            var badTokenResult = jwtService.ValidateToken("invalid.bearer.token", out _, out var badTokenErr);
+
+            if (!noTokenResult && !badTokenResult)
+            {
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine("-> THÀNH CÔNG: Chặn thiếu hoặc sai Token:");
+                Console.WriteLine($"   * Khi thiếu Token: {noTokenErr}");
+                Console.WriteLine($"   * Khi Token sai chữ ký: {badTokenErr}");
+                Console.ResetColor();
+            }
+            else
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("-> THẤT BẠI: Đã chấp nhận Token sai hoặc thiếu!");
+                Console.ResetColor();
+            }
+
+            // -------------------------------------------------------------
+            // TEST 2: Lấy danh tính từ phiên & Chặn giả mạo người dùng (Impersonation Attack)
+            // -------------------------------------------------------------
+            Console.WriteLine("\n[TEST 2] Lấy danh tính từ phiên & Chặn giả mạo người dùng...");
+            var impersonationAttempt = authzService.VerifyNoImpersonation(principalPlayer, claimedUserId: outsider.UserId);
+
+            if (!impersonationAttempt.IsAuthorized && impersonationAttempt.StatusCode == 403)
+            {
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine("-> THÀNH CÔNG: Đã chặn hành vi giả mạo ID người dùng:");
+                Console.WriteLine($"   * Thông báo: {impersonationAttempt.Message}");
+                Console.WriteLine($"   * Danh tính trích xuất từ Token: UserId = {principalPlayer?.FindFirst(ClaimTypes.NameIdentifier)?.Value}");
+                Console.ResetColor();
+            }
+            else
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("-> THẤT BẠI: Không phát hiện được hành vi giả mạo!");
+                Console.ResetColor();
+            }
+
+            // -------------------------------------------------------------
+            // TEST 3: Người ngoài phòng (Outsider) bị từ chối mọi thao tác
+            // -------------------------------------------------------------
+            Console.WriteLine("\n[TEST 3] Người ngoài phòng cố gắng thao tác (Đi quân, bắt đầu, đóng phòng, gọi video)...");
+            var outsiderStart = await authzService.AuthorizeStartMatchAsync(room.RoomId, outsider.UserId);
+            var outsiderMove = await authzService.AuthorizeMakeMoveAsync(room.RoomId, match.MatchId, outsider.UserId);
+            var outsiderClose = await authzService.AuthorizeCloseRoomAsync(room.RoomId, outsider.UserId);
+            var outsiderVideo = await authzService.AuthorizeVideoCallAsync(room.RoomId, outsider.UserId);
+
+            bool allOutsiderBlocked = !outsiderStart.IsAuthorized && !outsiderMove.IsAuthorized
+                                   && !outsiderClose.IsAuthorized && !outsiderVideo.IsAuthorized;
+
+            if (allOutsiderBlocked)
+            {
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine("-> THÀNH CÔNG: Toàn bộ thao tác của người ngoài phòng đều bị chặn 403 Forbidden:");
+                Console.WriteLine($"   * Bắt đầu phòng: {outsiderStart.Message}");
+                Console.WriteLine($"   * Đi quân: {outsiderMove.Message}");
+                Console.WriteLine($"   * Đóng phòng: {outsiderClose.Message}");
+                Console.WriteLine($"   * Gọi video: {outsiderVideo.Message}");
+                Console.ResetColor();
+            }
+            else
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("-> THẤT BẠI: Người ngoài phòng đã lọt qua kiểm tra quyền!");
+                Console.ResetColor();
+            }
+
+            // -------------------------------------------------------------
+            // TEST 4: Khán giả trong phòng (Spectator) cố gắng đi quân
+            // -------------------------------------------------------------
+            Console.WriteLine("\n[TEST 4] Khán giả trong phòng cố gắng đi quân...");
+            var spectatorMove = await authzService.AuthorizeMakeMoveAsync(room.RoomId, match.MatchId, spectator.UserId);
+
+            if (!spectatorMove.IsAuthorized)
+            {
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine($"-> THÀNH CÔNG: Chặn khán giả đi quân: {spectatorMove.Message}");
+                Console.ResetColor();
+            }
+            else
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("-> THẤT BẠI: Khán giả được phép đi quân cờ!");
+                Console.ResetColor();
+            }
+
+            // -------------------------------------------------------------
+            // TEST 5: Đấu thủ hợp lệ thực hiện thao tác đúng quyền
+            // -------------------------------------------------------------
+            Console.WriteLine("\n[TEST 5] Đấu thủ hợp lệ thực hiện thao tác đúng quyền...");
+            var playerMove = await authzService.AuthorizeMakeMoveAsync(room.RoomId, match.MatchId, playerRed.UserId);
+            var playerVideo = await authzService.AuthorizeVideoCallAsync(room.RoomId, playerRed.UserId);
+
+            if (playerMove.IsAuthorized && playerVideo.IsAuthorized)
+            {
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine("-> THÀNH CÔNG: Đấu thủ hợp lệ được phép đi quân và gọi video trong phòng.");
+                Console.ResetColor();
+            }
+            else
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("-> THẤT BẠI: Đấu thủ hợp lệ bị từ chối quyền!");
+                Console.ResetColor();
+            }
+
+            // -------------------------------------------------------------
+            // TEST 6: Bảo mật nhật ký (Không ghi Token vào log)
+            // -------------------------------------------------------------
+            Console.WriteLine("\n[TEST 6] Kiểm tra bảo mật nhật ký (Log Sanitization)...");
+            var sampleLog = $"GET /hubs/game?access_token={tokenPlayer} HTTP/1.1 | Authorization: Bearer {tokenPlayer}";
+            var sanitizedLog = GameCoTuong.Middleware.LogSanitizer.Sanitize(sampleLog);
+
+            bool containsSecretToken = sanitizedLog.Contains(tokenPlayer);
+            bool containsRedacted = sanitizedLog.Contains("[REDACTED]");
+
+            if (!containsSecretToken && containsRedacted)
+            {
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine("-> THÀNH CÔNG: Token đã được che mờ hoàn toàn trong nhật ký hệ thống:");
+                Console.WriteLine($"   * Nhật ký gốc: {sampleLog[..60]}...");
+                Console.WriteLine($"   * Nhật ký an toàn: {sanitizedLog}");
+                Console.ResetColor();
+            }
+            else
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("-> THẤT BẠI: Token bị lộ vào nhật ký!");
+                Console.ResetColor();
+            }
+        }
+
+        Console.WriteLine("\n================ HOÀN TẤT TẤT CẢ KIỂM THỬ (GCT-29) ================\n");
+        return;
+    }
+
     if (arg == "--test-login")
     {
         Console.WriteLine("\n================ KIỂM THỬ TÍNH NĂNG ĐĂNG NHẬP & CẤP JWT (GCT-28) ================");
@@ -516,6 +720,7 @@ try
     }
 
     Console.WriteLine("\nCác lệnh khả dụng:");
+    Console.WriteLine("  dotnet run -- --test-authz        : Kiểm thử toàn diện Phân quyền API & Phòng (GCT-29)");
     Console.WriteLine("  dotnet run -- --test-login        : Kiểm thử toàn diện Đăng nhập & JWT (GCT-28)");
     Console.WriteLine("  dotnet run -- --test-register     : Kiểm thử toàn diện Đăng ký tài khoản (GCT-27)");
     Console.WriteLine("  dotnet run -- --test-constraints  : Kiểm thử các ràng buộc Unique DB (GCT-26)");
