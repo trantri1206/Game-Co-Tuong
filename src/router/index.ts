@@ -64,7 +64,7 @@ export const router = createRouter({
   routes
 });
 
-// Navigation Guard: Kiểm tra phiên đăng nhập và bảo vệ các màn hình
+// Navigation Guard: Kiểm tra phiên đăng nhập và bảo vệ các màn hình (GCT-34)
 router.beforeEach((to, _from, next) => {
   const authStore = useAuthStore();
 
@@ -73,16 +73,23 @@ router.beforeEach((to, _from, next) => {
     document.title = `${to.meta.title} | Kỳ Đạo`;
   }
 
-  // 1. Nếu trang yêu cầu đăng nhập mà chưa có phiên -> chuyển về /login
+  // 1. Chặn màn hình riêng khi chưa đăng nhập (Bảo vệ màn hình riêng & Chống lặp chuyển trang)
   if (to.meta.requiresAuth && !authStore.isAuthenticated) {
+    // Nếu đích đến đã là /login thì cho qua để tránh loop
+    if (to.path === '/login') {
+      return next();
+    }
     return next({
       path: '/login',
       query: { redirect: to.fullPath }
     });
   }
 
-  // 2. Nếu đã đăng nhập mà cố vào lại /login -> chuyển về /lobby
+  // 2. Nếu đã đăng nhập mà cố vào lại /login -> chuyển về /lobby (chống lặp)
   if (to.meta.guestOnly && authStore.isAuthenticated) {
+    if (to.path === '/lobby') {
+      return next();
+    }
     return next('/lobby');
   }
 

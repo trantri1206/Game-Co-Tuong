@@ -2,6 +2,8 @@ import axios, { AxiosError, type AxiosInstance, type InternalAxiosRequestConfig 
 import { apiConfig } from './config';
 import { useAuthStore } from '@/stores/auth';
 import { useAppStore } from '@/stores/app';
+import { signalrService } from '@/services/signalrService';
+import router from '@/router';
 
 // Mở rộng AxiosRequestConfig để theo dõi số lần thử lại (retry count)
 declare module 'axios' {
@@ -122,9 +124,16 @@ apiClient.interceptors.response.use(
     // Xử lý riêng cho 401 Unauthorized khi đang dùng session cũ (không phải lúc đang login)
     if (normalized.statusCode === 401 && !config.url?.includes('/auth/login')) {
       const authStore = useAuthStore();
-      if (authStore.isAuthenticated) {
-        authStore.clearAuth();
-        appStore.notify('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.', 'warning');
+      await signalrService.disconnect();
+      authStore.clearAuth();
+      appStore.notify('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.', 'warning');
+
+      const currentRoute = router.currentRoute.value;
+      if (currentRoute.path !== '/login') {
+        router.push({
+          path: '/login',
+          query: { redirect: currentRoute.fullPath }
+        });
       }
     }
 

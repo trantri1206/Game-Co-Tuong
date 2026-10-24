@@ -231,3 +231,24 @@ npm run build
 # Khởi chạy máy chủ phát triển frontend
 npm run dev
 ```
+
+---
+
+## 13. Quản Lý Phiên Trên Giao Diện (GCT-34)
+
+Hệ thống quản lý phiên đăng nhập và bảo mật phiên theo chuẩn an toàn tuyệt đối:
+
+### A. Quản lý Token In-Memory (Zero LocalStorage)
+* **Tuyệt đối không lưu Token trong LocalStorage**: Toàn bộ Access Token JWT và User Profile chỉ được lưu giữ trong bộ nhớ tạm (RAM) thông qua Pinia Store [`useAuthStore`](file:///src/stores/auth.ts).
+* **Bảo mật khi tải lại trang**: Khi người dùng tải lại trang (F5/Reload) hoặc đóng tab, bộ nhớ RAM được reset về `null`, hệ thống lập tức yêu cầu đăng nhập lại để đảm bảo an toàn, không lưu vết token trên ổ đĩa máy khách.
+* **Xóa sạch dấu vết cũ**: Tự động dọn dẹp các khóa token cũ trong storage nếu có.
+
+### B. Gắn Token Vào API & Tích Hợp SignalR Realtime
+* **REST API**: Header Interceptor trong [`src/api/client.ts`](file:///src/api/client.ts) đọc token từ RAM và tự động gắn `Authorization: Bearer <token>`.
+* **SignalR Realtime**: Module [`src/services/signalrService.ts`](file:///src/services/signalrService.ts) kết nối tới `/hubs/game` thông qua thư viện `@microsoft/signalr`, cung cấp token qua `accessTokenFactory` và query string `?access_token=<token>`.
+* **Đóng kết nối khi kết thúc phiên**: Khi người dùng bấm đăng xuất hoặc phiên hết hạn (401), hệ thống lập tức ngắt kết nối WebSocket/SignalR (`connection.stop()`) để giải phóng tài nguyên.
+
+### C. Bảo Vệ Màn Hình Riêng & Chống Lặp Chuyển Trang (Navigation Guards)
+* **Bảo vệ màn hình**: Mọi route có `meta.requiresAuth` ([`/lobby`](file:///src/views/LobbyView.vue), [`/room/:id`](file:///src/views/RoomView.vue), [`/match/:id`](file:///src/views/MatchView.vue), [`/history`](file:///src/views/HistoryView.vue)) đều được kiểm tra trước khi chuyển trang.
+* **Chuyển hướng chính xác**: Nếu chưa đăng nhập, router lưu đường dẫn đích vào tham số query `?redirect=${encodeURIComponent(to.fullPath)}` và đưa về `/login`. Sau khi đăng nhập thành công, người dùng được đưa về đúng màn hình đã yêu cầu.
+* **Chống lặp vô tận (No Infinite Redirect Loop)**: Kiểm tra điều kiện `to.path !== '/login'` trước khi chuyển hướng để ngăn chặn hoàn toàn lỗi lặp chuyển trang.

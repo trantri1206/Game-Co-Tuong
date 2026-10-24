@@ -8,37 +8,46 @@ export interface UserProfile {
   displayName: string;
 }
 
-const TOKEN_KEY = 'cotuong_access_token';
-const USER_KEY = 'cotuong_user_profile';
-
+/**
+ * Store Quản Lý Phiên Xác Thực (GCT-34):
+ * - TUYỆT ĐỐI KHÔNG LƯU TOKEN HOẶC MẬT KHẨU TRONG LOCALSTORAGE.
+ * - Toàn bộ Access Token và User Profile chỉ được lưu trữ trong bộ nhớ tạm (In-Memory RAM).
+ * - Khi người dùng tải lại trang (F5/Reload), bộ nhớ sẽ reset về null và yêu cầu đăng nhập lại.
+ */
 export const useAuthStore = defineStore('auth', () => {
-  const token = ref<string | null>(localStorage.getItem(TOKEN_KEY));
+  // Trạng thái thuần túy trong RAM (In-Memory)
+  const token = ref<string | null>(null);
   const user = ref<UserProfile | null>(null);
 
-  // Khôi phục thông tin user từ localStorage nếu có
-  const savedUser = localStorage.getItem(USER_KEY);
-  if (savedUser) {
-    try {
-      user.value = JSON.parse(savedUser);
-    } catch {
-      localStorage.removeItem(USER_KEY);
-    }
+  // Dọn dẹp triệt để bất kỳ khóa lưu trữ nhạy cảm cũ nào trong localStorage nếu có
+  try {
+    localStorage.removeItem('cotuong_access_token');
+    localStorage.removeItem('cotuong_user_profile');
+    localStorage.removeItem('token');
+    localStorage.removeItem('password');
+    localStorage.removeItem('access_token');
+  } catch {
+    // Không làm gián đoạn nếu môi trường chặn localStorage
   }
 
   const isAuthenticated = computed(() => !!token.value);
 
   function setAuth(newToken: string, newUser: UserProfile) {
+    // Chỉ lưu trong bộ nhớ ứng dụng
     token.value = newToken;
     user.value = newUser;
-    localStorage.setItem(TOKEN_KEY, newToken);
-    localStorage.setItem(USER_KEY, JSON.stringify(newUser));
   }
 
   function clearAuth() {
     token.value = null;
     user.value = null;
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(USER_KEY);
+
+    // Đảm bảo không còn dữ liệu trong storage
+    try {
+      localStorage.removeItem('cotuong_access_token');
+      localStorage.removeItem('cotuong_user_profile');
+      sessionStorage.clear();
+    } catch {}
   }
 
   return {

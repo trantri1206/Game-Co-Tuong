@@ -4,6 +4,7 @@ import { useRouter, useRoute } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
 import { useAppStore } from '@/stores/app';
 import { authApi } from '@/api/authApi';
+import { signalrService } from '@/services/signalrService';
 
 const router = useRouter();
 const route = useRoute();
@@ -172,9 +173,21 @@ async function handleLogin() {
       displayName: data.user.displayName
     });
 
-    appStore.notify('Đăng nhập thành công! Đang chuyển vào sảnh cờ...', 'success');
-    const redirectPath = (route.query.redirect as string) || '/lobby';
-    await router.push(redirectPath);
+    // Kết nối SignalR bằng access token trong bộ nhớ RAM
+    await signalrService.connect();
+
+    appStore.notify('Đăng nhập thành công! Đang chuyển vào màn hình yêu cầu...', 'success');
+
+    // Đăng nhập xong về đúng màn hình cần mở & Chống lặp chuyển trang (GCT-34)
+    let targetPath = '/lobby';
+    if (route.query.redirect && typeof route.query.redirect === 'string') {
+      const decoded = decodeURIComponent(route.query.redirect);
+      // Chỉ chấp nhận đường dẫn tương đối nội bộ và không phải /login để tránh lặp
+      if (decoded.startsWith('/') && !decoded.startsWith('//') && decoded !== '/login') {
+        targetPath = decoded;
+      }
+    }
+    await router.push(targetPath);
   } catch (err: any) {
     // Luôn mở lại nút khi có lỗi
     if (err.statusCode === 401) {

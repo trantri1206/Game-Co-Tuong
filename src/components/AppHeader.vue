@@ -3,6 +3,7 @@ import { computed } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
 import { useAppStore } from '@/stores/app';
+import { signalrService } from '@/services/signalrService';
 
 const router = useRouter();
 const route = useRoute();
@@ -12,11 +13,12 @@ const appStore = useAppStore();
 const user = computed(() => authStore.user);
 const isAuthenticated = computed(() => authStore.isAuthenticated);
 
-function handleLogout() {
+async function handleLogout() {
   if (confirm('Bạn có chắc chắn muốn đăng xuất không?')) {
+    await signalrService.disconnect();
     authStore.clearAuth();
-    appStore.notify('Đã đăng xuất thành công!', 'info');
-    router.push('/login');
+    appStore.notify('Đã đăng xuất thành công! Toàn bộ trạng thái đã được giải phóng.', 'info');
+    await router.push('/login');
   }
 }
 </script>
