@@ -116,39 +116,60 @@ dotnet run -- --seed
 * **Bảo mật nhật ký (Log Sanitization)**:
   * Tự động làm mờ toàn bộ token bí mật trong log: header `Bearer [REDACTED]` và query parameter `access_token=[REDACTED]`. Không bao giờ ghi token vào nhật ký hệ thống.
 
+## 9. Lấy Hồ Sơ & Chính Sách Phiên / Đăng Xuất (GCT-30)
+
+### Cơ chế hoạt động:
+* **Lấy hồ sơ theo danh tính phiên**: Trích xuất `UserId` an toàn từ Token. Không bao giờ nhận `userId` từ Client để quyết định xem hồ sơ ai.
+* **Chặn đổi hồ sơ bằng mã người dùng tùy ý**: Mọi yêu cầu cập nhật tên hiển thị (`DisplayName`) kèm mã người dùng khác (`ClaimedUserId != TokenUserId`) đều bị từ chối `403 Forbidden`.
+* **Chính sách đầu hàng khi đang trong ván cờ (Surrender Policy)**:
+  * Nếu người chơi đang trong ván cờ `InProgress` mà yêu cầu đăng xuất hoặc rời phòng:
+    * Khi `ConfirmSurrender = false`: Hệ thống **chặn đăng xuất** và yêu cầu người chơi xác nhận đầu hàng.
+    * **Hủy đầu hàng**: Ván đấu giữ nguyên trạng thái `InProgress`, người chơi tiếp tục trận đấu ("Hủy đầu hàng giữ trận").
+    * **Xác nhận đầu hàng**: Xử thua người chơi, đối thủ thắng cuộc (`Result = OpponentWin`), kết thúc ván đấu, xóa người chơi khỏi phòng và điều hướng về trang đăng nhập ("Xác nhận đăng xuất đưa về đăng nhập đúng luồng").
+* **Chính sách hiệu lực JWT**:
+  * Ghi chú rõ: *"Do bản chất phi trạng thái (Stateless) của JWT, token cũ về mặt kỹ thuật vẫn còn hiệu lực cho đến thời điểm hết hạn (ExpiresAt) trừ khi được hệ thống thu hồi qua Blacklist. Phía Client bắt buộc phải xóa sạch token khỏi bộ nhớ (localStorage/cookies) khi đăng xuất."*
+  * Hệ thống tích hợp sẵn `TokenBlacklistService` vô hiệu hóa tức thì token cũ ngay sau khi người chơi đăng xuất.
+
 ---
 
-## 9. Kiểm Thử Hệ Thống
+## 10. Kiểm Thử Hệ Thống
 
-### A. Kiểm thử toàn diện Phân Quyền API & Phòng Cờ (GCT-29)
+### A. Kiểm thử Hồ Sơ & Chính Sách Đăng Xuất (GCT-30)
 ```bash
-dotnet run -- --test-authz
+dotnet run -- --test-session
 # Hoặc nếu môi trường chặn thực thi file exe trực tiếp:
-dotnet .\bin\Debug\net10.0\GameCoTuong.dll --test-authz
+dotnet .\bin\Debug\net10.0\GameCoTuong.dll --test-session
 ```
 Kịch bản kiểm thử tự động gồm 6 phần:
-1. **Chặn thiếu hoặc sai token**: Thiếu token hoặc token sai chữ ký đều bị chặn.
-2. **Chặn giả mạo người dùng**: Phát hiện và chặn khi gửi `claimedUserId` khác với ID trong Token.
-3. **Chặn người ngoài phòng**: Bị từ chối `403 Forbidden` khi cố bắt đầu, đi quân, đóng phòng hoặc gọi video.
-4. **Chặn khán giả đi quân**: Khán giả trong phòng bị từ chối đi quân.
-5. **Đấu thủ hợp lệ**: Thực hiện đi quân và gọi video thành công.
-6. **Bảo mật nhật ký**: Token được làm mờ `[REDACTED]` khi ghi log.
+1. **Lấy hồ sơ cá nhân**: Trả đúng thông tin từ Token.
+2. **Chặn đổi hồ sơ tùy ý**: Chặn `403 Forbidden` khi cố tình truyền mã người dùng khác.
+3. **Yêu cầu xác nhận đầu hàng**: Đang chơi cờ mà đăng xuất $\rightarrow$ Yêu cầu xác nhận đầu hàng.
+4. **Hủy đầu hàng giữ trận**: Hủy đầu hàng $\rightarrow$ Giữ nguyên trận đấu `InProgress`.
+5. **Xác nhận đầu hàng & Đăng xuất**: Cập nhật xử thua, rời phòng, trả chỉ dẫn xóa token phía client (`DeleteClientToken = true`, `RedirectToLogin = true`).
+6. **Thu hồi phiên & Chính sách JWT**: Ghi chú rõ thời hạn JWT và vô hiệu hóa token cũ qua Blacklist.
 
-### B. Kiểm thử toàn diện Đăng Nhập & Cấp JWT (GCT-28)
+### B. Kiểm thử toàn diện Phân Quyền API & Phòng Cờ (GCT-29)
+```bash
+dotnet run -- --test-authz
+# Hoặc:
+dotnet .\bin\Debug\net10.0\GameCoTuong.dll --test-authz
+```
+
+### C. Kiểm thử toàn diện Đăng Nhập & Cấp JWT (GCT-28)
 ```bash
 dotnet run -- --test-login
 # Hoặc:
 dotnet .\bin\Debug\net10.0\GameCoTuong.dll --test-login
 ```
 
-### C. Kiểm thử toàn diện Đăng Ký Tài Khoản (GCT-27)
+### D. Kiểm thử toàn diện Đăng Ký Tài Khoản (GCT-27)
 ```bash
 dotnet run -- --test-register
 # Hoặc:
 dotnet .\bin\Debug\net10.0\GameCoTuong.dll --test-register
 ```
 
-### D. Kiểm thử ràng buộc Unique Database (GCT-26)
+### E. Kiểm thử ràng buộc Unique Database (GCT-26)
 ```bash
 dotnet run -- --test-constraints
 # Hoặc:

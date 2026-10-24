@@ -23,7 +23,8 @@ var optionsBuilder = new DbContextOptionsBuilder<CoTuongDbContext>();
 optionsBuilder.UseSqlServer(connectionString);
 
 var passwordHasher = new BCryptPasswordHasher();
-var jwtService = new JwtService(configuration);
+var tokenBlacklistService = new TokenBlacklistService();
+var jwtService = new JwtService(configuration, tokenBlacklistService);
 
 // Helper tạo DbContext mới cho mỗi test
 CoTuongDbContext CreateContext() => new(optionsBuilder.Options);
@@ -31,6 +32,188 @@ CoTuongDbContext CreateContext() => new(optionsBuilder.Options);
 try
 {
     var arg = args.FirstOrDefault()?.ToLowerInvariant();
+
+    if (arg == "--test-session")
+    {
+        Console.WriteLine("\n================ KIỂM THỬ HỒ SƠ & CHÍNH SÁCH PHIÊN / ĐĂNG XUẤT (GCT-30) ================");
+
+        // Đảm bảo dữ liệu demo sẵn sàng trong DB
+        using (var setupCtx = CreateContext())
+        {
+            await DbInitializer.SeedAsync(setupCtx);
+
+            var userRed = await setupCtx.Users.FirstAsync(u => u.Username == "player_red_demo");
+            var userBlack = await setupCtx.Users.FirstAsync(u => u.Username == "player_black_demo");
+            var room = await setupCtx.Rooms.FirstAsync();
+
+            // Đảm bảo cả 2 là thành viên phòng
+            if (!await setupCtx.RoomMembers.AnyAsync(rm => rm.RoomId == room.RoomId && rm.UserId == userRed.UserId))
+            {
+                setupCtx.RoomMembers.Add(new RoomMember { RoomId = room.RoomId, UserId = userRed.UserId, JoinedAt = DateTime.UtcNow });
+            }
+            if (!await setupCtx.RoomMembers.AnyAsync(rm => rm.RoomId == room.RoomId && rm.UserId == userBlack.UserId))
+            {
+                setupCtx.RoomMembers.Add(new RoomMember { RoomId = room.RoomId, UserId = userBlack.UserId, JoinedAt = DateTime.UtcNow });
+            }
+
+            // Đảm bảo có ván cờ InProgress
+            var testMatch = await setupCtx.Matches.FirstOrDefaultAsync(m => m.RoomId == room.RoomId && m.Result == "InProgress" && m.EndTime == null);
+            if (testMatch == null)
+            {
+                testMatch = new Match
+                {
+                    RoomId = room.RoomId,
+                    MatchType = "Ranked",
+                    InitialBoardState = "rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w - - 0 1",
+                    Result = "InProgress",
+                    Reason = "Đang thi đấu",
+                    Version = "1.0",
+                    StartTime = DateTime.UtcNow
+                };
+                setupCtx.Matches.Add(testMatch);
+                await setupCtx.SaveChangesAsync();
+
+                setupCtx.MatchPlayers.AddRange(
+                    new MatchPlayer { MatchId = testMatch.MatchId, UserId = userRed.UserId, Side = "Red" },
+                    new MatchPlayer { MatchId = testMatch.MatchId, UserId = userBlack.UserId, Side = "Black" }
+                );
+            }
+            await setupCtx.SaveChangesAsync();
+        }
+
+        using (var ctx = CreateContext())
+        {
+            var userService = new UserService(ctx, tokenBlacklistService);
+            var userRed = await ctx.Users.FirstAsync(u => u.Username == "player_red_demo");
+            var userBlack = await ctx.Users.FirstAsync(u => u.Username == "player_black_demo");
+
+            var (tokenRed, _) = jwtService.GenerateToken(userRed);
+            jwtService.ValidateToken(tokenRed, out var principalRed, out _);
+
+            // TEST 1: Lấy thông tin hồ sơ theo danh tính phiên
+            Console.WriteLine("\n[TEST 1] Lấy hồ sơ người dùng theo danh tính phiên xác thực...");
+            var profile = await userService.GetProfileAsync(principalRed!);
+            if (profile != null && profile.Username == "player_red_demo")
+            {
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine("-> THÀNH CÔNG: Lấy hồ sơ cá nhân thành công:");
+                Console.WriteLine($"   * UserId: {profile.UserId}");
+                Console.WriteLine($"   * Tên đăng nhập: {profile.Username}");
+                Console.WriteLine($"   * Email: {profile.Email}");
+                Console.WriteLine($"   * Tên hiển thị: {profile.DisplayName}");
+                Console.WriteLine($"   * Đang trong trận cờ: {(profile.IsInActiveMatch ? "Có" : "Không")}");
+                Console.ResetColor();
+            }
+            else
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("-> THẤT BẠI: Không lấy được hồ sơ cá nhân!");
+                Console.ResetColor();
+            }
+
+            // TEST 2: Chặn đổi hồ sơ bằng mã người dùng tùy ý (Impersonation Attack)
+            Console.WriteLine("\n[TEST 2] Chặn đổi hồ sơ bằng mã người dùng tùy ý...");
+            var attackRequest = new UpdateProfileRequest
+            {
+                DisplayName = "Hacker Thay Đổi Tên",
+                ClaimedUserId = userBlack.UserId // Cố tình truyền ID của user khác
+            };
+            var attackResult = await userService.UpdateProfileAsync(principalRed!, attackRequest);
+            if (!attackResult.IsAuthorized && attackResult.StatusCode == 403)
+            {
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine($"-> THÀNH CÔNG: Đã chặn hành vi đổi hồ sơ người khác: {attackResult.Message}");
+                Console.ResetColor();
+            }
+            else
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("-> THẤT BẠI: Cho phép đổi hồ sơ bằng mã người dùng tùy ý!");
+                Console.ResetColor();
+            }
+
+            // TEST 3: Đang chơi cờ yêu cầu xác nhận đầu hàng khi đăng xuất
+            Console.WriteLine("\n[TEST 3] Đang chơi cờ: Yêu cầu xác nhận đầu hàng khi đăng xuất...");
+            var logoutAttemptWithoutConfirm = await userService.LogoutAsync(principalRed!, new LogoutRequest { ConfirmSurrender = false }, tokenRed);
+            if (!logoutAttemptWithoutConfirm.IsSuccess && logoutAttemptWithoutConfirm.RequiresSurrenderConfirmation)
+            {
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine("-> THÀNH CÔNG: Đã chặn đăng xuất và yêu cầu xác nhận đầu hàng:");
+                Console.WriteLine($"   * Cảnh báo: {logoutAttemptWithoutConfirm.Message}");
+                Console.WriteLine($"   * DeleteClientToken = {logoutAttemptWithoutConfirm.DeleteClientToken}");
+                Console.ResetColor();
+            }
+            else
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("-> THẤT BẠI: Đã cho phép đăng xuất khi chưa xác nhận đầu hàng!");
+                Console.ResetColor();
+            }
+
+            // TEST 4: Hủy đầu hàng giữ trận
+            Console.WriteLine("\n[TEST 4] Hủy đầu hàng giữ trận...");
+            var cancelResult = await userService.CancelSurrenderAsync(principalRed!);
+            var checkMatchStillActive = await ctx.Matches.AnyAsync(m => m.Result == "InProgress" && m.EndTime == null);
+            if (cancelResult.IsAuthorized && checkMatchStillActive)
+            {
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine("-> THÀNH CÔNG: Hủy đầu hàng giữ nguyên trận đấu:");
+                Console.WriteLine($"   * Thông báo: {cancelResult.Message}");
+                Console.WriteLine($"   * Trạng thái trận cờ trong DB: InProgress");
+                Console.ResetColor();
+            }
+            else
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("-> THẤT BẠI: Trận đấu bị hủy hoặc không giữ nguyên!");
+                Console.ResetColor();
+            }
+
+            // TEST 5: Xác nhận đầu hàng và đăng xuất đưa về đăng nhập đúng luồng
+            Console.WriteLine("\n[TEST 5] Xác nhận đầu hàng và đăng xuất đưa về đăng nhập đúng luồng...");
+            var logoutConfirmed = await userService.LogoutAsync(principalRed!, new LogoutRequest { ConfirmSurrender = true }, tokenRed);
+            var isUserRemovedFromRoom = !await ctx.RoomMembers.AnyAsync(rm => rm.UserId == userRed.UserId);
+            var matchUpdated = await ctx.Matches.OrderByDescending(m => m.MatchId).FirstOrDefaultAsync();
+
+            if (logoutConfirmed.IsSuccess && logoutConfirmed.DeleteClientToken && logoutConfirmed.RedirectToLogin
+                && isUserRemovedFromRoom && matchUpdated?.Result == "BlackWin")
+            {
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine("-> THÀNH CÔNG: Đăng xuất và xử lý đầu hàng đúng luồng:");
+                Console.WriteLine($"   * Thông báo: {logoutConfirmed.Message}");
+                Console.WriteLine($"   * Kết quả trận cờ: {matchUpdated.Result} ({matchUpdated.Reason})");
+                Console.WriteLine($"   * Rời phòng: User đã được xóa khỏi RoomMembers");
+                Console.WriteLine($"   * Chỉ dẫn Client: DeleteClientToken = {logoutConfirmed.DeleteClientToken}, RedirectToLogin = {logoutConfirmed.RedirectToLogin}");
+                Console.ResetColor();
+            }
+            else
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("-> THẤT BẠI: Đăng xuất hoặc xử lý đầu hàng không đúng!");
+                Console.ResetColor();
+            }
+
+            // TEST 6: Kiểm tra chính sách JWT và thu hồi phiên
+            Console.WriteLine("\n[TEST 6] Kiểm tra chính sách JWT và thu hồi phiên đăng nhập...");
+            Console.WriteLine($"   * Ghi chú chính sách: {logoutConfirmed.JwtPolicyNotice}");
+            var isTokenStillValid = jwtService.ValidateToken(tokenRed, out _, out var tokenRevokeErr);
+            if (!isTokenStillValid)
+            {
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine($"-> THÀNH CÔNG: Token cũ đã bị vô hiệu hóa ngay sau khi đăng xuất: {tokenRevokeErr}");
+                Console.ResetColor();
+            }
+            else
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("-> THẤT BẠI: Token cũ vẫn còn hợp lệ!");
+                Console.ResetColor();
+            }
+        }
+
+        Console.WriteLine("\n================ HOÀN TẤT TẤT CẢ KIỂM THỬ (GCT-30) ================\n");
+        return;
+    }
 
     if (arg == "--test-authz")
     {
@@ -72,12 +255,18 @@ try
 
             // Gán spectator vào phòng 1 nhưng KHÔNG gán vào MatchPlayers
             var room = await setupCtx.Rooms.FirstAsync();
+            var playerRed = await setupCtx.Users.FirstAsync(u => u.Username == "player_red_demo");
+            if (!await setupCtx.RoomMembers.AnyAsync(rm => rm.RoomId == room.RoomId && rm.UserId == playerRed.UserId))
+            {
+                setupCtx.RoomMembers.Add(new RoomMember { RoomId = room.RoomId, UserId = playerRed.UserId, JoinedAt = DateTime.UtcNow });
+            }
+
             var isSpectatorInRoom = await setupCtx.RoomMembers.AnyAsync(rm => rm.RoomId == room.RoomId && rm.UserId == spectator.UserId);
             if (!isSpectatorInRoom)
             {
                 setupCtx.RoomMembers.Add(new RoomMember { RoomId = room.RoomId, UserId = spectator.UserId, JoinedAt = DateTime.UtcNow });
-                await setupCtx.SaveChangesAsync();
             }
+            await setupCtx.SaveChangesAsync();
         }
 
         using (var ctx = CreateContext())
@@ -720,6 +909,7 @@ try
     }
 
     Console.WriteLine("\nCác lệnh khả dụng:");
+    Console.WriteLine("  dotnet run -- --test-session      : Kiểm thử Hồ sơ & Chính sách Đăng xuất (GCT-30)");
     Console.WriteLine("  dotnet run -- --test-authz        : Kiểm thử toàn diện Phân quyền API & Phòng (GCT-29)");
     Console.WriteLine("  dotnet run -- --test-login        : Kiểm thử toàn diện Đăng nhập & JWT (GCT-28)");
     Console.WriteLine("  dotnet run -- --test-register     : Kiểm thử toàn diện Đăng ký tài khoản (GCT-27)");

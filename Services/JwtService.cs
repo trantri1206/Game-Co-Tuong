@@ -13,22 +13,25 @@ public class JwtService : IJwtService
     private readonly string _issuer;
     private readonly string _audience;
     private readonly int _expirationInMinutes;
+    private readonly ITokenBlacklistService? _blacklistService;
 
-    public JwtService(IConfiguration configuration)
+    public JwtService(IConfiguration configuration, ITokenBlacklistService? blacklistService = null)
     {
         _secretKey = configuration["Jwt:SecretKey"]
             ?? "GameCoTuong_Default_Secret_Key_At_Least_32_Characters_Long!";
         _issuer = configuration["Jwt:Issuer"] ?? "GameCoTuongServer";
         _audience = configuration["Jwt:Audience"] ?? "GameCoTuongClient";
         _expirationInMinutes = int.TryParse(configuration["Jwt:ExpirationInMinutes"], out var exp) ? exp : 60;
+        _blacklistService = blacklistService;
     }
 
-    public JwtService(string secretKey, string issuer = "GameCoTuongServer", string audience = "GameCoTuongClient", int expirationInMinutes = 60)
+    public JwtService(string secretKey, string issuer = "GameCoTuongServer", string audience = "GameCoTuongClient", int expirationInMinutes = 60, ITokenBlacklistService? blacklistService = null)
     {
         _secretKey = secretKey;
         _issuer = issuer;
         _audience = audience;
         _expirationInMinutes = expirationInMinutes;
+        _blacklistService = blacklistService;
     }
 
     public (string Token, DateTime ExpiresAt) GenerateToken(User user, TimeSpan? customLifetime = null)
@@ -85,6 +88,12 @@ public class JwtService : IJwtService
         if (string.IsNullOrWhiteSpace(token))
         {
             errorMessage = "Token không được để trống.";
+            return false;
+        }
+
+        if (_blacklistService != null && _blacklistService.IsTokenRevoked(token))
+        {
+            errorMessage = "Phiên truy cập đã bị thu hồi do đăng xuất (Token revoked).";
             return false;
         }
 
