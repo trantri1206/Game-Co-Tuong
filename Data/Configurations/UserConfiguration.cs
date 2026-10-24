@@ -20,6 +20,11 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
             .IsUnicode(false)
             .IsRequired();
 
+        builder.Property(u => u.Email)
+            .HasMaxLength(100)
+            .IsUnicode(false)
+            .IsRequired();
+
         builder.Property(u => u.PasswordHash)
             .HasMaxLength(255)
             .IsUnicode(false)
@@ -37,5 +42,10 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
         builder.HasIndex(u => u.Username)
             .IsUnique()
             .HasDatabaseName("UQ_Users_Username");
+
+        // Chặn email trùng thông qua Unique Index UQ_Users_Email
+        builder.HasIndex(u => u.Email)
+            .IsUnique()
+            .HasDatabaseName("UQ_Users_Email");
     }
 }

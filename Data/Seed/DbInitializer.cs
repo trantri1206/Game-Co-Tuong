@@ -20,7 +20,8 @@ public static class DbInitializer
         var userRed = new User
         {
             Username = "player_red_demo",
-            PasswordHash = "$2a$12$e8F0sN3VvWvYJ4vB4GgP..fAk5bL7kFmQcR7gD3E9w1aZ8y6uO4iK", // Fake mock hash
+            Email = "player_red_demo@example.com",
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("DemoPass123!"),
             DisplayName = "Kỳ Thủ Đỏ Demo",
             CreatedAt = DateTime.UtcNow
         };
@@ -28,7 +29,8 @@ public static class DbInitializer
         var userBlack = new User
         {
             Username = "player_black_demo",
-            PasswordHash = "$2a$12$k8J0sN3VvWvYJ4vB4GgP..fAk5bL7kFmQcR7gD3E9w1aZ8y6uO4iL", // Fake mock hash
+            Email = "player_black_demo@example.com",
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("DemoPass123!"),
             DisplayName = "Kỳ Thủ Đen Demo",
             CreatedAt = DateTime.UtcNow
         };
@@ -36,7 +38,8 @@ public static class DbInitializer
         var botAi = new User
         {
             Username = "bot_easy_demo",
-            PasswordHash = "$2a$12$b8M0sN3VvWvYJ4vB4GgP..fAk5bL7kFmQcR7gD3E9w1aZ8y6uO4iM", // Fake mock hash
+            Email = "bot_easy_demo@example.com",
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword("DemoPass123!"),
             DisplayName = "Máy Dễ Demo",
             CreatedAt = DateTime.UtcNow
         };

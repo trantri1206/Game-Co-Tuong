@@ -1,11 +1,13 @@
 using GameCoTuong.Data;
 using GameCoTuong.Data.Seed;
+using GameCoTuong.DTOs;
 using GameCoTuong.Entities;
+using GameCoTuong.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 
 Console.OutputEncoding = System.Text.Encoding.UTF8;
-Console.WriteLine("=== HỆ THỐNG QUẢN LÝ DỮ LIỆU CỜ TƯỚNG (EF CORE) ===");
+Console.WriteLine("=== HỆ THỐNG QUẢN LÝ CỜ TƯỚNG (EF CORE & AUTHENTICATION) ===");
 
 var configuration = new ConfigurationBuilder()
     .SetBasePath(Directory.GetCurrentDirectory())
@@ -19,20 +21,243 @@ var connectionString = configuration.GetConnectionString("DefaultConnection")
 var optionsBuilder = new DbContextOptionsBuilder<CoTuongDbContext>();
 optionsBuilder.UseSqlServer(connectionString);
 
-using var context = new CoTuongDbContext(optionsBuilder.Options);
+var passwordHasher = new BCryptPasswordHasher();
 
 try
 {
     var arg = args.FirstOrDefault()?.ToLowerInvariant();
 
-    if (arg == "--test-constraints")
+    if (arg == "--test-register")
+    {
+        Console.WriteLine("\n================ KIỂM THỬ TÍNH NĂNG ĐĂNG KÝ (GCT-27) ================");
+
+        // Helper tạo DbContext mới cho mỗi test
+        CoTuongDbContext CreateContext() => new(optionsBuilder.Options);
+
+        // -------------------------------------------------------------
+        // TEST 1: Kiểm tra dữ liệu không hợp lệ (Validation)
+        // -------------------------------------------------------------
+        Console.WriteLine("\n[TEST 1] Kiểm tra dữ liệu sai có thông báo rõ ràng...");
+        using (var ctx = CreateContext())
+        {
+            var auth = new AuthService(ctx, passwordHasher);
+            var invalidRequest = new RegisterRequest
+            {
+                Username = "a",                      // Quá ngắn (< 3)
+                Email = "invalid-email-format",      // Sai định dạng
+                Password = "123",                    // Quá ngắn (< 8), thiếu hoa, thường, ký tự đặc biệt
+                ConfirmPassword = "456"              // Không khớp
+            };
+
+            var result = await auth.RegisterAsync(invalidRequest);
+
+            if (!result.IsSuccess && result.Errors.Count > 0)
+            {
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine("-> THÀNH CÔNG: Đã phát hiện và thông báo đầy đủ các lỗi:");
+                foreach (var err in result.Errors)
+                {
+                    Console.WriteLine($"   * {err}");
+                }
+                Console.ResetColor();
+            }
+            else
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("-> THẤT BẠI: Hệ thống không chặn dữ liệu sai!");
+                Console.ResetColor();
+            }
+        }
+
+        // -------------------------------------------------------------
+        // TEST 2: Đăng ký tài khoản hợp lệ, băm mật khẩu, bảo mật phản hồi
+        // -------------------------------------------------------------
+        Console.WriteLine("\n[TEST 2] Đăng ký tài khoản hợp lệ, băm mật khẩu & kiểm tra bảo mật phản hồi...");
+        var uniqueSuffix = DateTime.UtcNow.Ticks.ToString()[^6..];
+        var validUsername = $"Player_{uniqueSuffix}";
+        var validEmail = $"Player_{uniqueSuffix}@Example.COM"; // Viết hoa để test chuẩn hóa
+        var rawPassword = "SecurePassword@123";
+
+        using (var ctx = CreateContext())
+        {
+            var auth = new AuthService(ctx, passwordHasher);
+            var validRequest = new RegisterRequest
+            {
+                Username = $"  {validUsername}  ", // Kèm khoảng trắng để test Trim
+                Email = $"  {validEmail}  ",
+                Password = rawPassword,
+                ConfirmPassword = rawPassword,
+                DisplayName = "Kỳ Thủ Mới"
+            };
+
+            var result = await auth.RegisterAsync(validRequest);
+
+            if (result.IsSuccess && result.Data != null)
+            {
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine("-> THÀNH CÔNG: Đăng ký tài khoản hợp lệ thành công!");
+                Console.WriteLine($"   * UserId: {result.Data.UserId}");
+                Console.WriteLine($"   * Username (Đã chuẩn hóa thường): '{result.Data.Username}'");
+                Console.WriteLine($"   * Email (Đã chuẩn hóa thường): '{result.Data.Email}'");
+                Console.WriteLine($"   * DisplayName: '{result.Data.DisplayName}'");
+
+                // Kiểm tra UserResponse không có trường Password hay PasswordHash
+                var responseProps = typeof(UserResponse).GetProperties().Select(p => p.Name).ToList();
+                if (!responseProps.Contains("Password") && !responseProps.Contains("PasswordHash"))
+                {
+                    Console.WriteLine("   * Bảo mật phản hồi: TUYỆT ĐỐI KHÔNG chứa Password hoặc PasswordHash trong DTO phản hồi.");
+                }
+
+                // Kiểm tra trong Database
+                var dbUser = await ctx.Users.FirstOrDefaultAsync(u => u.UserId == result.Data.UserId);
+                if (dbUser != null)
+                {
+                    bool isHashed = dbUser.PasswordHash.StartsWith("$2") && dbUser.PasswordHash != rawPassword;
+                    bool canVerify = passwordHasher.VerifyPassword(rawPassword, dbUser.PasswordHash);
+                    Console.WriteLine($"   * Mật khẩu đã được băm an toàn bằng BCrypt: {dbUser.PasswordHash[..20]}...");
+                    Console.WriteLine($"   * Kiểm tra khớp mật khẩu gốc: {(canVerify ? "HỢP LỆ" : "KHÔNG HỢP LỆ")}");
+                }
+                Console.ResetColor();
+            }
+            else
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine($"-> THẤT BẠI: {result.Message}");
+                Console.ResetColor();
+            }
+        }
+
+        // -------------------------------------------------------------
+        // TEST 3: Chặn trùng kể cả khác hoa thường (Case-insensitive)
+        // -------------------------------------------------------------
+        Console.WriteLine("\n[TEST 3] Kiểm tra chặn trùng tên / email kể cả khác hoa thường...");
+        using (var ctx = CreateContext())
+        {
+            var auth = new AuthService(ctx, passwordHasher);
+
+            // Test trùng username khác hoa thường (ví dụ: PLAYER_123456)
+            var dupUsernameRequest = new RegisterRequest
+            {
+                Username = validUsername.ToUpperInvariant(), // Viết hoa toàn bộ
+                Email = $"different_{uniqueSuffix}@example.com",
+                Password = rawPassword,
+                ConfirmPassword = rawPassword
+            };
+
+            var resultUsername = await auth.RegisterAsync(dupUsernameRequest);
+            if (!resultUsername.IsSuccess)
+            {
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine($"-> THÀNH CÔNG: Đã chặn trùng Username (khác hoa thường): {resultUsername.Errors.FirstOrDefault()}");
+                Console.ResetColor();
+            }
+            else
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("-> THẤT BẠI: Cho phép trùng Username khác hoa thường!");
+                Console.ResetColor();
+            }
+
+            // Test trùng email khác hoa thường
+            var dupEmailRequest = new RegisterRequest
+            {
+                Username = $"different_{uniqueSuffix}",
+                Email = validEmail.ToLowerInvariant(),
+                Password = rawPassword,
+                ConfirmPassword = rawPassword
+            };
+
+            var resultEmail = await auth.RegisterAsync(dupEmailRequest);
+            if (!resultEmail.IsSuccess)
+            {
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine($"-> THÀNH CÔNG: Đã chặn trùng Email (khác hoa thường): {resultEmail.Errors.FirstOrDefault()}");
+                Console.ResetColor();
+            }
+            else
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("-> THẤT BẠI: Cho phép trùng Email khác hoa thường!");
+                Console.ResetColor();
+            }
+        }
+
+        // -------------------------------------------------------------
+        // TEST 4: Chặn trùng khi gửi đồng thời (Concurrency Test)
+        // -------------------------------------------------------------
+        Console.WriteLine("\n[TEST 4] Kiểm tra gửi đồng thời (10 luồng cùng đăng ký một tài khoản)...");
+        var concurrentUsername = $"concurrent_{DateTime.UtcNow.Ticks.ToString()[^5..]}";
+        var concurrentEmail = $"{concurrentUsername}@example.com";
+
+        var tasks = Enumerable.Range(1, 10).Select(async i =>
+        {
+            // Mỗi thread dùng 1 DbContext riêng biệt
+            using var threadCtx = CreateContext();
+            var auth = new AuthService(threadCtx, passwordHasher);
+            return await auth.RegisterAsync(new RegisterRequest
+            {
+                Username = concurrentUsername,
+                Email = concurrentEmail,
+                Password = rawPassword,
+                ConfirmPassword = rawPassword,
+                DisplayName = $"Concurrent Thread {i}"
+            });
+        }).ToArray();
+
+        var results = await Task.WhenAll(tasks);
+        var successCount = results.Count(r => r.IsSuccess);
+        var failureCount = results.Count(r => !r.IsSuccess);
+
+        Console.WriteLine($"   * Số luồng gửi đi: 10");
+        Console.WriteLine($"   * Số luồng thành công: {successCount}");
+        Console.WriteLine($"   * Số luồng bị chặn: {failureCount}");
+
+        if (successCount == 1 && failureCount == 9)
+        {
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.WriteLine("-> THÀNH CÔNG: Đúng chính xác 1 tài khoản được tạo! 9 yêu cầu gửi đồng thời còn lại đều bị chặn an toàn.");
+            Console.ResetColor();
+        }
+        else
+        {
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.WriteLine($"-> THẤT BẠI: Kết quả không mong đợi (Thành công: {successCount}, Thất bại: {failureCount})");
+            Console.ResetColor();
+        }
+
+        Console.WriteLine("\n================ HOÀN TẤT TẤT CẢ KIỂM THỬ (GCT-27) ================\n");
+        return;
+    }
+
+    // Các lệnh từ GCT-26
+    using var context = new CoTuongDbContext(optionsBuilder.Options);
+    var defaultArg = args.FirstOrDefault()?.ToLowerInvariant();
+
+    if (defaultArg == "--seed")
+    {
+        Console.WriteLine("Đang nạp dữ liệu mẫu (Seed Data)...");
+        await DbInitializer.SeedAsync(context);
+        Console.WriteLine("Nạp dữ liệu mẫu hoàn tất!");
+        return;
+    }
+
+    if (defaultArg == "--migrate")
+    {
+        Console.WriteLine("Đang chạy migration lên SQL Server...");
+        await context.Database.MigrateAsync();
+        Console.WriteLine("Migration hoàn tất!");
+        return;
+    }
+
+    if (defaultArg == "--test-constraints")
     {
         Console.WriteLine("\n[1/2] Đang kiểm tra ràng buộc: Chặn tài khoản trùng Username...");
         try
         {
             var dupUser = new User
             {
-                Username = "player_red_demo", // Trùng username đã seed
+                Username = "player_red_demo",
+                Email = "player_red_demo@example.com",
                 PasswordHash = "dummyhash",
                 DisplayName = "Trùng lặp"
             };
@@ -48,7 +273,6 @@ try
             Console.WriteLine("-> THÀNH CÔNG: Đã chặn tài khoản trùng Username đúng theo thiết kế!");
             Console.WriteLine($"   Chi tiết lỗi chặn: {ex.InnerException?.Message ?? ex.Message}");
             Console.ResetColor();
-            // Detach duplicate entity to clear context
             context.ChangeTracker.Clear();
         }
 
@@ -64,7 +288,7 @@ try
                 {
                     MatchId = existingMatch.MatchId,
                     UserId = existingUser.UserId,
-                    MoveOrder = 1, // Đã tồn tại MoveOrder = 1 trong ván đấu này
+                    MoveOrder = 1,
                     MoveNotation = "C2.5_DUP"
                 };
                 context.Moves.Add(dupMove);
@@ -72,10 +296,6 @@ try
                 Console.ForegroundColor = ConsoleColor.Red;
                 Console.WriteLine("-> THẤT BẠI: Đã không chặn được nước đi trùng!");
                 Console.ResetColor();
-            }
-            else
-            {
-                Console.WriteLine("-> Cần chạy --seed trước khi test ràng buộc nước đi.");
             }
         }
         catch (DbUpdateException ex)
@@ -90,28 +310,11 @@ try
         return;
     }
 
-    if (arg == "--seed")
-    {
-        Console.WriteLine("Đang nạp dữ liệu mẫu (Seed Data)...");
-        await DbInitializer.SeedAsync(context);
-        Console.WriteLine("Nạp dữ liệu mẫu hoàn tất!");
-        return;
-    }
-
-    if (arg == "--migrate")
-    {
-        Console.WriteLine("Đang chạy migration lên SQL Server...");
-        await context.Database.MigrateAsync();
-        Console.WriteLine("Migration hoàn tất!");
-        return;
-    }
-
     Console.WriteLine("\nCác lệnh khả dụng:");
-    Console.WriteLine("  dotnet ef migrations add <Name>   : Tạo migration mới");
-    Console.WriteLine("  dotnet ef database update         : Cập nhật migration vào database");
-    Console.WriteLine("  dotnet run -- --migrate           : Tự động chạy migration qua code");
+    Console.WriteLine("  dotnet run -- --test-register     : Kiểm thử toàn diện Đăng ký tài khoản (GCT-27)");
+    Console.WriteLine("  dotnet run -- --test-constraints  : Kiểm thử các ràng buộc Unique DB (GCT-26)");
     Console.WriteLine("  dotnet run -- --seed              : Nạp dữ liệu mẫu demo");
-    Console.WriteLine("  dotnet run -- --test-constraints  : Kiểm tra kiểm thử ràng buộc trùng lặp");
+    Console.WriteLine("  dotnet run -- --migrate           : Áp dụng migration lên database");
 }
 catch (Exception ex)
 {
