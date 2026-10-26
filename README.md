@@ -549,3 +549,53 @@ dotnet test tests/GameCoTuong.Tests/GameCoTuong.Tests.csproj
 # Hoặc chạy kiểm thử toàn bộ hệ thống
 dotnet run -- --test-all
 ```
+
+---
+
+## 21. Luật Di Chuyển & Giới Hạn Cung: Quân Sĩ / Sĩ Quan (Advisor) (GCT-55)
+
+Quy tắc di chuyển và phạm vi hoạt động trong Cửu cung của quân Sĩ (仕 / 士 - Advisor / Guard) được cài đặt độc lập theo chuẩn Cờ Tướng quốc tế tại [`Engine/Rules/AdvisorRule.cs`](file:///Engine/Rules/AdvisorRule.cs) và [`src/engine/rules/advisor.ts`](file:///src/engine/rules/advisor.ts).
+
+### A. Quy Tắc Di Chuyển Chéo 1 Giao Điểm
+* **Hình dạng nước đi**: Sĩ di chuyển theo đường chéo đúng **1 giao điểm** mỗi nước đi:
+  $$|dCol| == 1 \land |dRow| == 1$$
+* **4 hướng chéo tiềm năng**:
+  * Lên - Trái: $(dCol = -1, dRow = -1)$
+  * Lên - Phải: $(dCol = +1, dRow = -1)$
+  * Xuống - Trái: $(dCol = -1, dRow = +1)$
+  * Xuống - Phải: $(dCol = +1, dRow = +1)$
+* **Chặn các hình dạng di chuyển sai**: Tuyệt đối chặn đi ngang, đi dọc (như Xe/Tốt), đi chéo 2 ô (như Tượng), đi chữ L (như Mã) hoặc đứng yên tại chỗ.
+
+### B. Giới Hạn Nghiêm Ngặt Trong Cửu Cung (Palace Constraint)
+* **Phạm vi Cửu cung**:
+  * Cột chung: $Col \in [3, 5]$ (cột 3, 4, 5).
+  * Cung Đen: $Row \in [0, 2]$ (hàng 0, 1, 2).
+  * Cung Đỏ: $Row \in [7, 9]$ (hàng 7, 8, 9).
+* **5 vị trí hợp lệ trên sân nhà**:
+  * **Tại 4 góc cung**: Sĩ chỉ có duy nhất **1 nước đi hợp lệ** vào tâm Cửu cung.
+    * Đỏ: `(3, 9)`, `(5, 9)`, `(3, 7)`, `(5, 7)` $\longrightarrow$ đi vào `(4, 8)`.
+    * Đen: `(3, 0)`, `(5, 0)`, `(3, 2)`, `(5, 2)` $\longrightarrow$ đi vào `(4, 1)`.
+  * **Tại tâm cung**: Sĩ có tối đa **4 nước đi hợp lệ** tỏa ra 4 góc cung.
+    * Đỏ: `(4, 8)` $\longrightarrow$ đi ra `(3, 7)`, `(5, 7)`, `(3, 9)`, `(5, 9)`.
+    * Đen: `(4, 1)` $\longrightarrow$ đi ra `(3, 0)`, `(5, 0)`, `(3, 2)`, `(5, 2)`.
+* **Từ chối mọi điểm ngoài cung**: Bất kỳ nước đi nào có điểm đến nằm ngoài Cửu cung bên mình (`!IsInPalace(color, to)`) đều bị từ chối tuyệt đối.
+
+### C. Ăn Quân Đối Phương & Chặn Ăn Quân Đồng Minh
+* **Ăn quân đối phương**: Khi ô đích hợp lệ trong Cửu cung có quân đối phương, Sĩ di chuyển tới và ăn quân đó.
+* **Chặn ăn quân đồng minh**: Tuyệt đối không được di chuyển vào ô đã có quân cùng phe.
+
+### D. Thế Cờ Ban Đầu Tiêu Chuẩn
+* Tại vị trí ban đầu của ván đấu (Sĩ Đỏ tại `(3, 9)` và `(5, 9)`; Sĩ Đen tại `(3, 0)` và `(5, 0)`):
+  * Mỗi quân Sĩ có đúng **1 nước đi hợp lệ duy nhất** tiến vào tâm Cửu cung (ví dụ Sĩ 4 tiến 5 hoặc Sĩ 6 tiến 5).
+
+### E. Kiểm Thử CLI & xUnit
+```bash
+# Kiểm thử chuyên biệt luật quân Sĩ qua CLI
+dotnet run -- --test-advisor
+
+# Chạy kiểm thử tự động xUnit
+dotnet test tests/GameCoTuong.Tests/GameCoTuong.Tests.csproj
+
+# Hoặc chạy kiểm thử toàn bộ hệ thống
+dotnet run -- --test-all
+```

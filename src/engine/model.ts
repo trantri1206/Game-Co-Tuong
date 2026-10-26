@@ -261,5 +261,6 @@ export * from './rules/chariot';
 export * from './rules/horse';
 export * from './rules/cannon';
 export * from './rules/elephant';
+export * from './rules/advisor';
 
 

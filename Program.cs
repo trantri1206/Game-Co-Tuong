@@ -36,7 +36,7 @@ try
 
     if (arg == "--test-all")
     {
-        Console.WriteLine("\n================ CHẠY TOÀN BỘ KIỂM THỬ HỆ THỐNG (GCT-31, GCT-42, GCT-43, GCT-50, GCT-51, GCT-52, GCT-53, GCT-54) ================");
+        Console.WriteLine("\n================ CHẠY TOÀN BỘ KIỂM THỬ HỆ THỐNG (GCT-31, GCT-42, GCT-43, GCT-50, GCT-51, GCT-52, GCT-53, GCT-54, GCT-55) ================");
         Console.WriteLine(">> Dữ liệu kiểm thử hoàn toàn độc lập và có thể chạy lặp lại vô số lần.");
 
         RunTestEngine();
@@ -46,6 +46,7 @@ try
         RunTestHorse();
         RunTestCannon();
         RunTestElephant();
+        RunTestAdvisor();
         await RunTestRegisterAsync();
         await RunTestLoginAsync();
         await RunTestAuthzAsync();
@@ -54,6 +55,12 @@ try
         Console.ForegroundColor = ConsoleColor.Green;
         Console.WriteLine("\n================ ĐÃ HOÀN TẤT TẤT CẢ CÁC BỘ KIỂM THỬ (100% THÀNH CÔNG) ================\n");
         Console.ResetColor();
+        return;
+    }
+
+    if (arg == "--test-advisor" || arg == "--test-si")
+    {
+        RunTestAdvisor();
         return;
     }
 
@@ -2155,6 +2162,187 @@ void RunTestElephant()
     {
         Console.ForegroundColor = ConsoleColor.Red;
         Console.WriteLine("-> THẤT BẠI: Kiểm tra Tượng ở thế cờ ban đầu chưa chính xác.");
+        Console.ResetColor();
+    }
+}
+
+void RunTestAdvisor()
+{
+    Console.WriteLine("\n================ KIỂM THỬ LUẬT QUÂN SĨ (GCT-55) ================");
+
+    var board = new ChessBoard();
+    board.Clear();
+
+    // TEST 1: Sĩ ở tâm Cửu cung đi đủ 4 góc cung (Đỏ tại (4, 8) và Đen tại (4, 1))
+    Console.WriteLine("\n[TEST 1] Sĩ ở tâm Cửu cung di chuyển tới 4 góc cung (Sĩ Đỏ và Sĩ Đen)...");
+    var centerRed = new Position(4, 8);
+    board.SetPiece(centerRed, new Piece(PieceType.Advisor, PieceColor.Red));
+
+    var legalMovesRed = board.GetLegalMoves(centerRed);
+    var expectedCornersRed = new[] { new Position(3, 7), new Position(5, 7), new Position(3, 9), new Position(5, 9) };
+    bool movesRedOk = legalMovesRed.Count == 4 && expectedCornersRed.All(m => legalMovesRed.Contains(m) && AdvisorRule.IsValidMove(board, centerRed, m));
+
+    // Thử với Sĩ Đen tại tâm (4, 1)
+    board.Clear();
+    board.ActiveColor = PieceColor.Black;
+    var centerBlack = new Position(4, 1);
+    board.SetPiece(centerBlack, new Piece(PieceType.Advisor, PieceColor.Black));
+
+    var legalMovesBlack = board.GetLegalMoves(centerBlack);
+    var expectedCornersBlack = new[] { new Position(3, 0), new Position(5, 0), new Position(3, 2), new Position(5, 2) };
+    bool movesBlackOk = legalMovesBlack.Count == 4 && expectedCornersBlack.All(m => legalMovesBlack.Contains(m) && AdvisorRule.IsValidMove(board, centerBlack, m));
+
+    if (movesRedOk && movesBlackOk)
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine("-> THÀNH CÔNG: Sĩ Đỏ và Sĩ Đen tại tâm Cửu cung đi được chính xác 4 góc cung!");
+        Console.ResetColor();
+    }
+    else
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine("-> THẤT BẠI: Sĩ ở tâm cung không sinh ra đúng 4 nước đi tới 4 góc.");
+        Console.ResetColor();
+    }
+
+    // TEST 2: Sĩ ở 4 góc cung có đúng 1 nước đi duy nhất vào tâm cung
+    Console.WriteLine("\n[TEST 2] Sĩ ở 4 góc cung chỉ có duy nhất 1 nước đi vào tâm cung...");
+    board.Clear();
+    board.ActiveColor = PieceColor.Red;
+
+    var redCorners = new[] { new Position(3, 9), new Position(5, 9), new Position(3, 7), new Position(5, 7) };
+    bool redCornersOk = true;
+    foreach (var corner in redCorners)
+    {
+        board.SetPiece(corner, new Piece(PieceType.Advisor, PieceColor.Red));
+        var moves = board.GetLegalMoves(corner);
+        if (moves.Count != 1 || moves[0] != centerRed || !board.IsValidMove(corner, centerRed))
+        {
+            redCornersOk = false;
+        }
+        board.SetPiece(corner, null);
+    }
+
+    if (redCornersOk)
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine("-> THÀNH CÔNG: Sĩ Đỏ ở cả 4 góc cung chỉ có đúng 1 nước đi duy nhất vào tâm cung!");
+        Console.ResetColor();
+    }
+    else
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine("-> THẤT BẠI: Sĩ ở góc cung di chuyển chưa chính xác.");
+        Console.ResetColor();
+    }
+
+    // TEST 3: Chặn mọi nước đi ra ngoài Cửu cung cho cả hai bên
+    Console.WriteLine("\n[TEST 3] Chặn mọi nước đi ra ngoài Cửu cung cho cả Đỏ và Đen...");
+    board.Clear();
+    board.ActiveColor = PieceColor.Red;
+
+    // Sĩ Đỏ tại (3, 7): đi chéo ra ngoài cung về phía sông (2, 6) bị chặn
+    board.SetPiece(new Position(3, 7), new Piece(PieceType.Advisor, PieceColor.Red));
+    bool redOutsideBlocked = !board.IsValidMove(new Position(3, 7), new Position(2, 6)) &&
+                             !AdvisorRule.IsInPalace(PieceColor.Red, new Position(2, 6));
+
+    // Sĩ Đen tại (5, 2): đi chéo ra ngoài cung về phía sông (6, 3) bị chặn
+    board.ActiveColor = PieceColor.Black;
+    board.SetPiece(new Position(5, 2), new Piece(PieceType.Advisor, PieceColor.Black));
+    bool blackOutsideBlocked = !board.IsValidMove(new Position(5, 2), new Position(6, 3)) &&
+                               !AdvisorRule.IsInPalace(PieceColor.Black, new Position(6, 3));
+
+    if (redOutsideBlocked && blackOutsideBlocked)
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine("-> THÀNH CÔNG: Mọi nước đi ra ngoài Cửu cung đều bị từ chối tuyệt đối cho cả hai bên!");
+        Console.ResetColor();
+    }
+    else
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine("-> THẤT BẠI: Sĩ đi ra ngoài Cửu cung trái luật.");
+        Console.ResetColor();
+    }
+
+    // TEST 4: Chặn đi ngang, đi dọc, đi chéo 2 ô, đi chữ L, đứng yên
+    Console.WriteLine("\n[TEST 4] Chặn đi ngang, đi dọc, đi chéo 2 ô, chữ L, đứng yên...");
+    board.Clear();
+    board.ActiveColor = PieceColor.Red;
+    board.SetPiece(centerRed, new Piece(PieceType.Advisor, PieceColor.Red));
+
+    bool invalidShapesBlocked = !AdvisorRule.IsValidMove(board, centerRed, centerRed) &&
+                                !AdvisorRule.IsValidMove(board, centerRed, new Position(4, 7)) && // Thẳng
+                                !AdvisorRule.IsValidMove(board, centerRed, new Position(3, 8)) && // Ngang
+                                !AdvisorRule.IsValidMove(board, new Position(3, 9), new Position(5, 7)) && // Chéo 2 ô
+                                !Position.IsValid(2, 10);
+
+    if (invalidShapesBlocked)
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine("-> THÀNH CÔNG: Chặn toàn bộ các hình dạng nước đi sai (thẳng, ngang, chéo 2 ô, đứng yên)!");
+        Console.ResetColor();
+    }
+    else
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine("-> THẤT BẠI: Chưa chặn triệt để nước đi sai của Sĩ.");
+        Console.ResetColor();
+    }
+
+    // TEST 5: Ăn quân đối phương trong cung hợp lệ và chặn ăn quân cùng màu
+    Console.WriteLine("\n[TEST 5] Ăn quân đối phương trong Cửu cung và chặn ăn quân cùng màu...");
+    board.Clear();
+    board.SetPiece(centerRed, new Piece(PieceType.Advisor, PieceColor.Red));
+    board.SetPiece(new Position(3, 7), new Piece(PieceType.Horse, PieceColor.Black));   // Quân địch
+    board.SetPiece(new Position(5, 7), new Piece(PieceType.General, PieceColor.Red)); // Quân ta
+
+    bool captureEnemyOk = board.IsValidMove(centerRed, new Position(3, 7));
+    bool friendlyBlocked = !board.IsValidMove(centerRed, new Position(5, 7));
+
+    if (captureEnemyOk && friendlyBlocked)
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine("-> THÀNH CÔNG: Sĩ ăn quân đối phương hợp lệ trong cung và chặn ăn quân đồng minh!");
+        Console.ResetColor();
+    }
+    else
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine("-> THẤT BẠI: Xử lý ăn quân đối phương hoặc chặn đồng minh của Sĩ chưa đúng.");
+        Console.ResetColor();
+    }
+
+    // TEST 6: Bốn quân Sĩ ở thế cờ ban đầu chuẩn: mỗi quân có đúng 1 nước đi vào tâm cung
+    Console.WriteLine("\n[TEST 6] Kiểm tra 4 quân Sĩ ở thế cờ ban đầu: Mỗi quân có đúng 1 nước đi vào tâm cung...");
+    var initialBoard = new ChessBoard();
+    initialBoard.SetupInitialPosition();
+
+    // Sĩ Đỏ tại (3, 9) và (5, 9)
+    var redAdvisor1Moves = initialBoard.GetLegalMoves(new Position(3, 9));
+    var redAdvisor2Moves = initialBoard.GetLegalMoves(new Position(5, 9));
+
+    bool initialRedOk = redAdvisor1Moves.Count == 1 && redAdvisor1Moves[0] == centerRed &&
+                        redAdvisor2Moves.Count == 1 && redAdvisor2Moves[0] == centerRed;
+
+    // Sĩ Đen tại (3, 0) và (5, 0)
+    initialBoard.ActiveColor = PieceColor.Black;
+    var blackAdvisor1Moves = initialBoard.GetLegalMoves(new Position(3, 0));
+    var blackAdvisor2Moves = initialBoard.GetLegalMoves(new Position(5, 0));
+
+    bool initialBlackOk = blackAdvisor1Moves.Count == 1 && blackAdvisor1Moves[0] == centerBlack &&
+                          blackAdvisor2Moves.Count == 1 && blackAdvisor2Moves[0] == centerBlack;
+
+    if (initialRedOk && initialBlackOk)
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine("-> THÀNH CÔNG: 4 quân Sĩ ở thế cờ ban đầu có đúng 1 nước đi hợp lệ duy nhất vào tâm Cửu cung!");
+        Console.ResetColor();
+    }
+    else
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine("-> THẤT BẠI: Kiểm tra Sĩ ở thế cờ ban đầu chưa chính xác.");
         Console.ResetColor();
     }
 }
