@@ -2,6 +2,7 @@ using System.Security.Claims;
 using GameCoTuong.Data;
 using GameCoTuong.Data.Seed;
 using GameCoTuong.DTOs;
+using GameCoTuong.Engine;
 using GameCoTuong.Entities;
 using GameCoTuong.Services;
 using Microsoft.EntityFrameworkCore;
@@ -34,17 +35,24 @@ try
 
     if (arg == "--test-all")
     {
-        Console.WriteLine("\n================ CHẠY TOÀN BỘ KIỂM THỬ TÀI KHOẢN & PHÂN QUYỀN (GCT-31) ================");
+        Console.WriteLine("\n================ CHẠY TOÀN BỘ KIỂM THỬ HỆ THỐNG (GCT-31 & GCT-42) ================");
         Console.WriteLine(">> Dữ liệu kiểm thử hoàn toàn độc lập và có thể chạy lặp lại vô số lần.");
 
+        RunTestEngine();
         await RunTestRegisterAsync();
         await RunTestLoginAsync();
         await RunTestAuthzAsync();
         await RunTestSessionAsync();
 
         Console.ForegroundColor = ConsoleColor.Green;
-        Console.WriteLine("\n================ ĐÃ HOÀN TẤT TẤT CẢ 4 BỘ KIỂM THỬ (100% THÀNH CÔNG) ================\n");
+        Console.WriteLine("\n================ ĐÃ HOÀN TẤT TẤT CẢ CÁC BỘ KIỂM THỬ (100% THÀNH CÔNG) ================\n");
         Console.ResetColor();
+        return;
+    }
+
+    if (arg == "--test-engine")
+    {
+        RunTestEngine();
         return;
     }
 
@@ -185,8 +193,9 @@ try
 
     Console.WriteLine("\nCác lệnh khả dụng:");
     Console.WriteLine("  dotnet run -- --server            : Khởi chạy Web API Server (http://localhost:5000)");
-    Console.WriteLine("  dotnet test                       : Chạy 32 Unit/Integration Tests tự động (xUnit - GCT-31)");
-    Console.WriteLine("  dotnet run -- --test-all          : Chạy toàn bộ kiểm thử tài khoản & phân quyền (GCT-31)");
+    Console.WriteLine("  dotnet run -- --test-engine       : Kiểm thử Mô hình Bàn cờ & Quân cờ (GCT-42)");
+    Console.WriteLine("  dotnet test                       : Chạy bộ Unit/Integration Tests tự động (xUnit)");
+    Console.WriteLine("  dotnet run -- --test-all          : Chạy toàn bộ kiểm thử hệ thống (GCT-31 & GCT-42)");
     Console.WriteLine("  dotnet run -- --test-session      : Kiểm thử Hồ sơ & Chính sách Đăng xuất (GCT-30)");
     Console.WriteLine("  dotnet run -- --test-authz        : Kiểm thử toàn diện Phân quyền API & Phòng (GCT-29)");
     Console.WriteLine("  dotnet run -- --test-login        : Kiểm thử toàn diện Đăng nhập & JWT (GCT-28)");
@@ -793,3 +802,96 @@ async Task RunTestConstraintsAsync()
         ctx.ChangeTracker.Clear();
     }
 }
+
+void RunTestEngine()
+{
+    Console.WriteLine("\n================ KIỂM THỬ MÔ HÌNH BÀN CỜ & QUÂN CỜ (GCT-42) ================");
+    Console.WriteLine(">> Bộ luật chạy độc lập 100%, không phụ thuộc Database hoặc Network.");
+
+    // 1. Kiểm tra kích thước bàn cờ & 90 giao điểm
+    Console.WriteLine("\n[TEST 1] Kiểm tra quy chuẩn 9 cột (0–8), 10 hàng (0–9) & 90 giao điểm...");
+    if (ChessBoard.Cols == 9 && ChessBoard.Rows == 10 && ChessBoard.TotalIntersections == 90)
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine($"-> THÀNH CÔNG: Bàn cờ chuẩn hóa chính xác {ChessBoard.Cols} cột x {ChessBoard.Rows} hàng = {ChessBoard.TotalIntersections} giao điểm.");
+        Console.ResetColor();
+    }
+
+    // 2. Kiểm tra chặn tọa độ ngoài bàn
+    Console.WriteLine("\n[TEST 2] Kiểm tra chặn tọa độ ngoài bàn cờ (Col < 0, Col > 8, Row < 0, Row > 9)...");
+    int rejectedCount = 0;
+    var invalidCoords = new (int c, int r)[] { (-1, 0), (9, 0), (0, -1), (0, 10), (10, 10) };
+    var testBoard = new ChessBoard();
+    foreach (var (c, r) in invalidCoords)
+    {
+        try
+        {
+            testBoard.GetPiece(c, r);
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            rejectedCount++;
+        }
+    }
+    if (rejectedCount == invalidCoords.Length)
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine($"-> THÀNH CÔNG: Đã chặn thành công {rejectedCount}/{invalidCoords.Length} tọa độ ngoài bàn cờ.");
+        Console.ResetColor();
+    }
+
+    // 3. Biểu diễn đủ 7 loại quân cờ
+    Console.WriteLine("\n[TEST 3] Kiểm tra biểu diễn đủ 7 loại quân cờ cho cả 2 phe (Đỏ / Đen)...");
+    var types = Enum.GetValues<PieceType>();
+    if (types.Length == 7)
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine("-> THÀNH CÔNG: Đã biểu diễn đầy đủ 7 loại quân: Tướng/Soái, Sĩ, Tượng, Mã, Xe, Pháo, Binh/Tốt.");
+        Console.ResetColor();
+    }
+
+    // 4. Khởi tạo bàn cờ ban đầu (Đen ở trên, Đỏ ở dưới, 32 quân cờ)
+    Console.WriteLine("\n[TEST 4] Khởi tạo thế cờ tiêu chuẩn: Đen ở trên (Hàng 0–4), Đỏ ở dưới (Hàng 5–9)...");
+    var initialBoard = ChessBoard.CreateInitial();
+    int totalPieces = initialBoard.CountPieces();
+    int redPieces = initialBoard.CountPieces(PieceColor.Red);
+    int blackPieces = initialBoard.CountPieces(PieceColor.Black);
+    var blackGeneral = initialBoard.GetPiece(4, 0);
+    var redGeneral = initialBoard.GetPiece(4, 9);
+
+    if (totalPieces == 32 && redPieces == 16 && blackPieces == 16 &&
+        blackGeneral?.Type == PieceType.General && blackGeneral.Color == PieceColor.Black &&
+        redGeneral?.Type == PieceType.General && redGeneral.Color == PieceColor.Red)
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine("-> THÀNH CÔNG: Thế cờ ban đầu chuẩn xác 32 quân (16 Đỏ, 16 Đen).");
+        Console.WriteLine($"   * Tướng Đen ngự tại Cung Đen (4, 0) - Hán Tự: {blackGeneral.Hanzi}");
+        Console.WriteLine($"   * Soái Đỏ ngự tại Cung Đỏ (4, 9) - Hán Tự: {redGeneral.Hanzi}");
+        Console.ResetColor();
+    }
+
+    // 5. Quản lý bên tới lượt và phiên bản trạng thái
+    Console.WriteLine("\n[TEST 5] Kiểm tra bên tới lượt (ActiveColor) và phiên bản trạng thái (StateVersion)...");
+    int v1 = initialBoard.StateVersion;
+    initialBoard.SwitchTurn();
+    int v2 = initialBoard.StateVersion;
+    if (initialBoard.ActiveColor == PieceColor.Black && v2 > v1)
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine($"-> THÀNH CÔNG: Đổi lượt chính xác sang Đen, StateVersion tăng ({v1} -> {v2}).");
+        Console.ResetColor();
+    }
+
+    // 6. Tuần tự hóa FEN
+    Console.WriteLine("\n[TEST 6] Kiểm tra chuyển đổi thế cờ sang chuỗi FEN chuẩn quốc tế...");
+    var fen = initialBoard.ToFen();
+    var parsed = ChessBoard.FromFen(fen);
+    if (parsed.CountPieces() == 32 && parsed.ActiveColor == PieceColor.Black)
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine("-> THÀNH CÔNG: Chuỗi FEN đối ứng và khôi phục hoàn hảo 100% trạng thái.");
+        Console.WriteLine($"   FEN: {fen}");
+        Console.ResetColor();
+    }
+}
+

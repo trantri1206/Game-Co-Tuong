@@ -252,3 +252,51 @@ Hệ thống quản lý phiên đăng nhập và bảo mật phiên theo chuẩn
 * **Bảo vệ màn hình**: Mọi route có `meta.requiresAuth` ([`/lobby`](file:///src/views/LobbyView.vue), [`/room/:id`](file:///src/views/RoomView.vue), [`/match/:id`](file:///src/views/MatchView.vue), [`/history`](file:///src/views/HistoryView.vue)) đều được kiểm tra trước khi chuyển trang.
 * **Chuyển hướng chính xác**: Nếu chưa đăng nhập, router lưu đường dẫn đích vào tham số query `?redirect=${encodeURIComponent(to.fullPath)}` và đưa về `/login`. Sau khi đăng nhập thành công, người dùng được đưa về đúng màn hình đã yêu cầu.
 * **Chống lặp vô tận (No Infinite Redirect Loop)**: Kiểm tra điều kiện `to.path !== '/login'` trước khi chuyển hướng để ngăn chặn hoàn toàn lỗi lặp chuyển trang.
+
+---
+
+## 14. Mô Hình Bàn Cờ & Quân Cờ Cờ Tướng (GCT-42)
+
+Mô hình trạng thái và dữ liệu cờ tướng được thiết kế theo kiến trúc **Pure Domain**: tách biệt 100% khỏi cơ sở dữ liệu (EF Core) và kết nối mạng (SignalR / WebSockets).
+
+### A. Quy Chuẩn Hệ Tọa Độ & Bàn Cờ 90 Giao Điểm
+* **Hệ trục tọa độ**:
+  * `Col` (Cột): `0` đến `8` (9 cột ngang).
+  * `Row` (Hàng): `0` đến `9` (10 hàng dọc).
+  * Tổng cộng: $9 \times 10 = 90$ giao điểm ([`Engine/Position.cs`](file:///Engine/Position.cs)).
+* **Quy ước vị trí hai phe**:
+  * **Phe Đen (Black)**: Nằm ở nửa trên bàn cờ (`Row` từ `0` đến `4`). Hàng đáy là `Row 0`. Cung tướng Đen gồm các ô `Col` $3..5$ và `Row` $0..2$.
+  * **Sông (River)**: Ranh giới tự nhiên ngăn cách giữa `Row 4` và `Row 5`.
+  * **Phe Đỏ (Red)**: Nằm ở nửa dưới bàn cờ (`Row` từ `5` đến `9`). Hàng đáy là `Row 9`. Cung tướng Đỏ gồm các ô `Col` $3..5$ và `Row` $7..9$.
+* **Chặn tọa độ ngoài bàn**:
+  * Mọi vị trí ngoài phạm vi $0 \le Col \le 8$ hoặc $0 \le Row \le 9$ đều bị chặn lập tức và ném ngoại lệ `ArgumentOutOfRangeException`.
+
+### B. Biểu Diễn 7 Loại Quân Cờ ([`Engine/Piece.cs`](file:///Engine/Piece.cs))
+* **Bảy loại quân cờ**:
+  1. `General`: Tướng / Soái (帅 / 将)
+  2. `Advisor`: Sĩ (仕 / 士)
+  3. `Elephant`: Tượng (相 / 象)
+  4. `Horse`: Mã (傌 / 馬)
+  5. `Chariot`: Xe (俥 / 車)
+  6. `Cannon`: Pháo (炮 / 砲)
+  7. `Soldier`: Binh / Tốt (兵 / 卒)
+* **Ký tự FEN quốc tế**:
+  * Phe Đỏ (viết hoa): `R, N, B, A, K, C, P`
+  * Phe Đen (viết thường): `r, n, b, a, k, c, p`
+
+### C. Quản Lý Trạng Thái & Phiên Bản Bàn Cờ ([`Engine/ChessBoard.cs`](file:///Engine/ChessBoard.cs))
+* **Bàn cờ ban đầu chuẩn (32 quân cờ)**: Đen ở trên, Đỏ ở dưới, đầy đủ 32 quân tại các tọa độ tiêu chuẩn.
+* **Bên tới lượt (`ActiveColor`)**: Mặc định Đỏ đi trước (`PieceColor.Red`), đổi lượt qua hàm `SwitchTurn()`.
+* **Phiên bản trạng thái (`StateVersion`)**: Tự động tăng sau mỗi biến đổi trạng thái để phục vụ đồng bộ dữ liệu.
+* **Tuần tự hóa FEN**:
+  * Chuỗi FEN ban đầu: `rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w - - 0 1`
+  * Chuyển đổi và khôi phục 100% qua `ToFen()` và `FromFen()`.
+
+### D. Kiểm Thử Độc Lập
+```bash
+# Kiểm thử trực quan mô hình cờ tướng qua CLI
+dotnet run -- --test-engine
+
+# Hoặc chạy kiểm thử toàn bộ hệ thống
+dotnet run -- --test-all
+```
