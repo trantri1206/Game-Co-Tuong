@@ -230,7 +230,7 @@ public class ChessBoard
         if (piece.Color != ActiveColor)
         {
             throw new InvalidOperationException(
-                $"Không phải lượt đi của phe {piece.Color}. Hiện tại đang là lượt của phe {ActiveColor}.");
+                $"Chưa đến lượt đi của phe {piece.Color}. Hiện tại đang là lượt của phe {ActiveColor}.");
         }
 
         var targetPiece = GetPiece(to);
@@ -311,6 +311,7 @@ public class ChessBoard
         {
             PieceType.Soldier => SoldierRule.IsValidMove(this, from, to),
             PieceType.Chariot => ChariotRule.IsValidMove(this, from, to),
+            PieceType.Horse => HorseRule.IsValidMove(this, from, to),
             _ => true
         };
     }
@@ -335,6 +336,7 @@ public class ChessBoard
         {
             PieceType.Soldier => SoldierRule.GetLegalMoves(this, from),
             PieceType.Chariot => ChariotRule.GetLegalMoves(this, from),
+            PieceType.Horse => HorseRule.GetLegalMoves(this, from),
             _ => new List<Position>()
         };
     }

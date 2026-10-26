@@ -410,3 +410,50 @@ dotnet run -- --test-rook
 # Hoặc chạy kiểm thử toàn bộ hệ thống
 dotnet run -- --test-all
 ```
+
+---
+
+## 18. Luật Di Chuyển & Cản Chân: Quân Mã (Horse / Knight) (GCT-52)
+
+Quy tắc di chuyển và cản chân của quân Mã (傌 / 馬 - Horse / Knight) được cài đặt độc lập theo chuẩn Cờ Tướng quốc tế tại [`Engine/Rules/HorseRule.cs`](file:///Engine/Rules/HorseRule.cs) và [`src/engine/rules/horse.ts`](file:///src/engine/rules/horse.ts).
+
+### A. Quy Tắc Di Chuyển Hình Chữ L (8 Hướng Đi)
+* **Hình dạng nước đi**: Mã di chuyển theo hình chữ L gồm **2 giao điểm theo một trục** (dọc hoặc ngang) và **1 giao điểm theo trục còn lại**.
+* **8 hướng đi tiềm năng**:
+  * Nhảy lên trên ($dRow = -2$): Ô đích $(Col \pm 1, Row - 2)$.
+  * Nhảy xuống dưới ($dRow = +2$): Ô đích $(Col \pm 1, Row + 2)$.
+  * Nhảy sang trái ($dCol = -2$): Ô đích $(Col - 2, Row \pm 1)$.
+  * Nhảy sang phải ($dCol = +2$): Ô đích $(Col + 2, Row \pm 1)$.
+* **Phạm vi hoạt động**: Mã không bị giới hạn qua sông hay cung tướng (đi tự do khắp 90 giao điểm của bàn cờ).
+
+### B. Quy Tắc Cản Chân Mã (Bán Mã Cước / Hobbling Rule)
+* **Xác định vị trí ô chân cản (Obstacle Square)**:
+  * Khi nhảy 2 dọc, 1 ngang ($|dRow| = 2 \land |dCol| = 1$): Chân cản nằm ở ô liền kề theo trục dọc: $(from.Col, from.Row + dRow / 2)$.
+  * Khi nhảy 2 ngang, 1 dọc ($|dCol| = 2 \land |dRow| = 1$): Chân cản nằm ở ô liền kề theo trục ngang: $(from.Col + dCol / 2, from.Row)$.
+* **Cơ chế cản**:
+  * Nếu ô chân cản có bất kỳ quân cờ nào (quân mình hoặc quân đối phương), hướng đi đó bị cản chân hoàn toàn (`IsHobbled == true`). Cả 2 hướng nhảy qua phía chân đó đều không thể di chuyển.
+  * Khi bị vây hãm cả 4 chân, quân Mã có đúng 0 nước đi hợp lệ.
+
+### C. Ăn Quân Đối Phương & Chặn Nước Đi Sai
+* **Ăn quân đối phương**: Khi ô đích hợp lệ có quân đối phương, Mã nhảy tới và ăn quân đó.
+* **Chặn ăn quân đồng minh**: Nếu ô đích có quân cùng màu, nước đi bị chặn.
+* **Chặn các hình dạng di chuyển sai**: Chặn đứng yên tại chỗ, đi thẳng/ngang (như Xe/Tốt), đi chéo (như Sĩ/Tượng).
+* **Lọc bỏ nước đi ngoài biên**: Các nước nhảy vượt ra ngoài phạm vi 9 cột và 10 hàng đều bị loại bỏ tự động.
+
+### D. Thế Cờ Ban Đầu Tiêu Chuẩn
+* Tại vị trí ban đầu của ván đấu (Mã Đỏ tại `(1, 9)` và `(7, 9)`; Mã Đen tại `(1, 0)` và `(7, 0)`):
+  * Chân hướng biên/đáy nằm ngoài bàn cờ hoặc bị cản.
+  * Chân hướng ngang bị cản bởi Xe và Tượng đồng minh.
+  * Chân hướng tiến vào trung tâm hoàn toàn trống $\implies$ Mỗi quân Mã ban đầu có đúng **2 nước tiến hợp lệ** (ví dụ Mã 2 tiến 3 hoặc Mã 2 tiến 1).
+
+### E. Kiểm Thử CLI & xUnit
+```bash
+# Kiểm thử chuyên biệt luật quân Mã qua CLI
+dotnet run -- --test-horse
+
+# Chạy kiểm thử tự động xUnit
+dotnet test tests/GameCoTuong.Tests/GameCoTuong.Tests.csproj
+
+# Hoặc chạy kiểm thử toàn bộ hệ thống
+dotnet run -- --test-all
+```

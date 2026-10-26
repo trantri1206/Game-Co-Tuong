@@ -36,13 +36,14 @@ try
 
     if (arg == "--test-all")
     {
-        Console.WriteLine("\n================ CHẠY TOÀN BỘ KIỂM THỬ HỆ THỐNG (GCT-31, GCT-42, GCT-43, GCT-50, GCT-51) ================");
+        Console.WriteLine("\n================ CHẠY TOÀN BỘ KIỂM THỬ HỆ THỐNG (GCT-31, GCT-42, GCT-43, GCT-50, GCT-51, GCT-52) ================");
         Console.WriteLine(">> Dữ liệu kiểm thử hoàn toàn độc lập và có thể chạy lặp lại vô số lần.");
 
         RunTestEngine();
         RunTestSimulation();
         RunTestSoldier();
         RunTestRook();
+        RunTestHorse();
         await RunTestRegisterAsync();
         await RunTestLoginAsync();
         await RunTestAuthzAsync();
@@ -51,6 +52,12 @@ try
         Console.ForegroundColor = ConsoleColor.Green;
         Console.WriteLine("\n================ ĐÃ HOÀN TẤT TẤT CẢ CÁC BỘ KIỂM THỬ (100% THÀNH CÔNG) ================\n");
         Console.ResetColor();
+        return;
+    }
+
+    if (arg == "--test-horse" || arg == "--test-knight")
+    {
+        RunTestHorse();
         return;
     }
 
@@ -1534,6 +1541,216 @@ void RunTestRook()
     {
         Console.ForegroundColor = ConsoleColor.Red;
         Console.WriteLine("-> THẤT BẠI: Xe ở thế cờ ban đầu không xử lý đúng.");
+        Console.ResetColor();
+    }
+}
+
+void RunTestHorse()
+{
+    Console.WriteLine("\n================ KIỂM THỬ LUẬT QUÂN MÃ (GCT-52) ================");
+
+    var board = new ChessBoard();
+    board.Clear();
+
+    // TEST 1: Đủ 8 hướng nhảy chữ L trên bàn cờ trống (cả hai màu Đỏ và Đen)
+    Console.WriteLine("\n[TEST 1] Đủ 8 hướng nhảy chữ L trên bàn cờ trống (Mã Đỏ và Mã Đen)...");
+    var centerPos = new Position(4, 4);
+    board.SetPiece(centerPos, new Piece(PieceType.Horse, PieceColor.Red));
+
+    var legalMovesRed = board.GetLegalMoves(centerPos);
+    var expectedMoves = new[]
+    {
+        new Position(3, 2), new Position(5, 2), // Nhảy lên (2 dọc, 1 ngang)
+        new Position(3, 6), new Position(5, 6), // Nhảy xuống (2 dọc, 1 ngang)
+        new Position(2, 3), new Position(2, 5), // Nhảy trái (2 ngang, 1 dọc)
+        new Position(6, 3), new Position(6, 5)  // Nhảy phải (2 ngang, 1 dọc)
+    };
+
+    bool allEightRed = legalMovesRed.Count == 8 && expectedMoves.All(m => legalMovesRed.Contains(m) && HorseRule.IsValidMove(board, centerPos, m));
+
+    // Thử với Mã Đen
+    board.Clear();
+    board.ActiveColor = PieceColor.Black;
+    board.SetPiece(centerPos, new Piece(PieceType.Horse, PieceColor.Black));
+    var legalMovesBlack = board.GetLegalMoves(centerPos);
+    bool allEightBlack = legalMovesBlack.Count == 8 && expectedMoves.All(m => legalMovesBlack.Contains(m) && HorseRule.IsValidMove(board, centerPos, m));
+
+    if (allEightRed && allEightBlack)
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine("-> THÀNH CÔNG: Mã Đỏ và Mã Đen đi được chính xác 8 hướng chữ L khi không bị cản chân!");
+        Console.ResetColor();
+    }
+    else
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine("-> THẤT BẠI: Mã không đi đủ hoặc sai 8 hướng chữ L.");
+        Console.ResetColor();
+    }
+
+    // TEST 2: Chặn cản chân Mã (bán mã cước) ở từng phía, bất kể màu quân cản
+    Console.WriteLine("\n[TEST 2] Chặn cản chân Mã (bán mã cước) ở cả 4 phía (Trên, Dưới, Trái, Phải), thử quân cản ta và địch...");
+    board.Clear();
+    board.ActiveColor = PieceColor.Red;
+    board.SetPiece(centerPos, new Piece(PieceType.Horse, PieceColor.Red));
+
+    // Cản chân trên (4, 3) bằng quân Đen (địch)
+    board.SetPiece(new Position(4, 3), new Piece(PieceType.Soldier, PieceColor.Black));
+    bool upBlocked = !board.IsValidMove(centerPos, new Position(3, 2)) &&
+                     !board.IsValidMove(centerPos, new Position(5, 2)) &&
+                     board.IsValidMove(centerPos, new Position(3, 6)) && // Các hướng khác vẫn đi được
+                     board.IsValidMove(centerPos, new Position(2, 3));
+    board.SetPiece(new Position(4, 3), null);
+
+    // Cản chân dưới (4, 5) bằng quân Đỏ (ta)
+    board.SetPiece(new Position(4, 5), new Piece(PieceType.Soldier, PieceColor.Red));
+    bool downBlocked = !board.IsValidMove(centerPos, new Position(3, 6)) &&
+                       !board.IsValidMove(centerPos, new Position(5, 6)) &&
+                       board.IsValidMove(centerPos, new Position(3, 2));
+    board.SetPiece(new Position(4, 5), null);
+
+    // Cản chân trái (3, 4) bằng quân Đen (địch)
+    board.SetPiece(new Position(3, 4), new Piece(PieceType.Chariot, PieceColor.Black));
+    bool leftBlocked = !board.IsValidMove(centerPos, new Position(2, 3)) &&
+                       !board.IsValidMove(centerPos, new Position(2, 5)) &&
+                       board.IsValidMove(centerPos, new Position(6, 3));
+    board.SetPiece(new Position(3, 4), null);
+
+    // Cản chân phải (5, 4) bằng quân Đỏ (ta)
+    board.SetPiece(new Position(5, 4), new Piece(PieceType.Advisor, PieceColor.Red));
+    bool rightBlocked = !board.IsValidMove(centerPos, new Position(6, 3)) &&
+                        !board.IsValidMove(centerPos, new Position(6, 5)) &&
+                        board.IsValidMove(centerPos, new Position(2, 3));
+    board.SetPiece(new Position(5, 4), null);
+
+    if (upBlocked && downBlocked && leftBlocked && rightBlocked)
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine("-> THÀNH CÔNG: Chặn cản chân Mã chính xác ở cả 4 phía, bất kể quân cản là quân ta hay quân địch!");
+        Console.ResetColor();
+    }
+    else
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine("-> THẤT BẠI: Cơ chế kiểm tra cản chân Mã chưa chính xác.");
+        Console.ResetColor();
+    }
+
+    // TEST 3: Chặn khi bị cản cả 4 chân (vây hãm hoàn toàn)
+    Console.WriteLine("\n[TEST 3] Vây hãm cả 4 chân Mã -> 0 nước đi hợp lệ...");
+    board.SetPiece(new Position(4, 3), new Piece(PieceType.Soldier, PieceColor.Red));
+    board.SetPiece(new Position(4, 5), new Piece(PieceType.Soldier, PieceColor.Black));
+    board.SetPiece(new Position(3, 4), new Piece(PieceType.Cannon, PieceColor.Red));
+    board.SetPiece(new Position(5, 4), new Piece(PieceType.Chariot, PieceColor.Black));
+
+    var siegeMoves = board.GetLegalMoves(centerPos);
+    if (siegeMoves.Count == 0)
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine("-> THÀNH CÔNG: Khi bị cản cả 4 chân, Mã không có bất kỳ nước đi nào hợp lệ (0 nước)!");
+        Console.ResetColor();
+    }
+    else
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine($"-> THẤT BẠI: Mã vẫn sinh ra {siegeMoves.Count} nước đi dù bị chặn cả 4 chân.");
+        Console.ResetColor();
+    }
+
+    // TEST 4: Ăn quân đối phương hợp lệ và chặn ăn quân cùng màu
+    Console.WriteLine("\n[TEST 4] Ăn quân đối phương hợp lệ và chặn ăn quân cùng màu...");
+    board.Clear();
+    board.SetPiece(centerPos, new Piece(PieceType.Horse, PieceColor.Red));
+    board.SetPiece(new Position(3, 2), new Piece(PieceType.General, PieceColor.Black)); // Tướng Đen ở điểm đến
+    board.SetPiece(new Position(5, 2), new Piece(PieceType.Soldier, PieceColor.Red));   // Binh Đỏ cùng màu ở điểm đến
+
+    bool captureEnemyOk = board.IsValidMove(centerPos, new Position(3, 2));
+    bool friendlyBlocked = !board.IsValidMove(centerPos, new Position(5, 2));
+
+    if (captureEnemyOk && friendlyBlocked)
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine("-> THÀNH CÔNG: Mã ăn quân đối phương hợp lệ tại điểm đến và chặn ăn quân đồng minh!");
+        Console.ResetColor();
+    }
+    else
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine("-> THẤT BẠI: Xử lý ăn quân hoặc chặn đồng minh của Mã chưa đúng.");
+        Console.ResetColor();
+    }
+
+    // TEST 5: Chặn điểm đến ngoài bàn và hình dạng nước đi sai (thẳng, ngang, chéo)
+    Console.WriteLine("\n[TEST 5] Chặn điểm đến ngoài bàn và hình dạng nước đi sai quy tắc...");
+    board.Clear();
+    board.SetPiece(centerPos, new Piece(PieceType.Horse, PieceColor.Red));
+
+    bool invalidShapesBlocked = !HorseRule.IsValidMove(board, centerPos, centerPos) &&
+                                !HorseRule.IsValidMove(board, centerPos, new Position(4, 3)) && // Thẳng
+                                !HorseRule.IsValidMove(board, centerPos, new Position(5, 4)) && // Ngang
+                                !HorseRule.IsValidMove(board, centerPos, new Position(5, 5)) && // Chéo 1 ô
+                                !HorseRule.IsValidMove(board, centerPos, new Position(6, 6)) && // Chéo 2 ô
+                                !Position.IsValid(-1, -2) &&                                    // Ngoài biên
+                                !Position.IsValid(9, 10);                                       // Ngoài biên
+
+    // Đặt Mã ở góc bàn cờ (0, 0): chỉ có 2 nước đi (1, 2) và (2, 1)
+    board.Clear();
+    var cornerPos = new Position(0, 0);
+    board.SetPiece(cornerPos, new Piece(PieceType.Horse, PieceColor.Red));
+    var cornerMoves = board.GetLegalMoves(cornerPos);
+    bool cornerOk = cornerMoves.Count == 2 && cornerMoves.Contains(new Position(1, 2)) && cornerMoves.Contains(new Position(2, 1));
+
+    if (invalidShapesBlocked && cornerOk)
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine("-> THÀNH CÔNG: Chặn các hình dạng nước đi sai và lọc sạch các nước vượt biên bàn cờ!");
+        Console.ResetColor();
+    }
+    else
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine("-> THẤT BẠI: Chưa chặn triệt để nước đi sai hoặc nước ngoài biên.");
+        Console.ResetColor();
+    }
+
+    // TEST 6: Bốn quân Mã ở thế cờ ban đầu chuẩn
+    Console.WriteLine("\n[TEST 6] Kiểm tra 4 quân Mã ở thế cờ ban đầu: Mỗi quân có đúng 2 nước đi tiến, bị cản ngang bởi Xe/Tượng...");
+    var initialBoard = new ChessBoard();
+    initialBoard.SetupInitialPosition();
+
+    // Mã Đỏ cánh phải (1, 9) và cánh trái (7, 9)
+    var redHorse1Moves = initialBoard.GetLegalMoves(new Position(1, 9));
+    var redHorse2Moves = initialBoard.GetLegalMoves(new Position(7, 9));
+
+    bool initialRedOk = redHorse1Moves.Count == 2 &&
+                        redHorse1Moves.Contains(new Position(2, 7)) &&
+                        redHorse1Moves.Contains(new Position(0, 7)) &&
+                        redHorse2Moves.Count == 2 &&
+                        redHorse2Moves.Contains(new Position(6, 7)) &&
+                        redHorse2Moves.Contains(new Position(8, 7));
+
+    // Đổi lượt sang Đen để kiểm tra 2 Mã Đen
+    initialBoard.ActiveColor = PieceColor.Black;
+    var blackHorse1Moves = initialBoard.GetLegalMoves(new Position(1, 0));
+    var blackHorse2Moves = initialBoard.GetLegalMoves(new Position(7, 0));
+
+    bool initialBlackOk = blackHorse1Moves.Count == 2 &&
+                          blackHorse1Moves.Contains(new Position(2, 2)) &&
+                          blackHorse1Moves.Contains(new Position(0, 2)) &&
+                          blackHorse2Moves.Count == 2 &&
+                          blackHorse2Moves.Contains(new Position(6, 2)) &&
+                          blackHorse2Moves.Contains(new Position(8, 2));
+
+    if (initialRedOk && initialBlackOk)
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine("-> THÀNH CÔNG: 4 quân Mã ở thế cờ ban đầu có đúng 2 nước tiến hợp lệ, chân ngang bị cản bởi Xe/Tượng!");
+        Console.ResetColor();
+    }
+    else
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine("-> THẤT BẠI: Kiểm tra quân Mã ở thế cờ ban đầu chưa chính xác.");
         Console.ResetColor();
     }
 }
