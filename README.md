@@ -457,3 +457,45 @@ dotnet test tests/GameCoTuong.Tests/GameCoTuong.Tests.csproj
 # Hoặc chạy kiểm thử toàn bộ hệ thống
 dotnet run -- --test-all
 ```
+
+---
+
+## 19. Luật Di Chuyển & Ăn Quân: Quân Pháo (Cannon) (GCT-53)
+
+Quy tắc di chuyển và ăn quân của quân Pháo (砲 / 炮 - Cannon) được cài đặt độc lập theo chuẩn Cờ Tướng quốc tế tại [`Engine/Rules/CannonRule.cs`](file:///Engine/Rules/CannonRule.cs) và [`src/engine/rules/cannon.ts`](file:///src/engine/rules/cannon.ts).
+
+### A. Cơ Chế Di Chuyển Khi Không Ăn Quân (Move to Empty Square)
+* **Hướng đi**: Đi theo hàng ngang (`from.Row == to.Row`) hoặc cột dọc (`from.Col == to.Col`), không giới hạn số ô di chuyển.
+* **Đoạn đường giữa**: Toàn bộ các giao điểm nằm giữa ô xuất phát và ô đích bắt buộc phải là ô trống (`CountPiecesBetween == 0`).
+* **Chặn nhảy qua ngòi tới ô trống**: Pháo tuyệt đối không được nhảy qua bất kỳ quân cờ nào để rơi vào một ô trống (chặn hành vi *"xuyên ngòi tới ô trống"*).
+
+### B. Cơ Chế Ăn Quân Qua Ngòi (Capture with Platform)
+* **Quy tắc ăn quân**: Pháo chỉ được phép ăn quân đối phương khi trên đường đi giữa ô xuất phát và ô đích có **ĐÚNG 1 quân cờ làm ngòi** (`CountPiecesBetween == 1`).
+* **Tính chất của quân ngòi (pháo giá)**:
+  * Quân làm ngòi có thể là **quân ta hoặc quân đối phương**, thuộc bất kỳ loại quân nào.
+  * Bản thân ô ngòi không phải là điểm đến của nước đi.
+* **Chặn khi không có ngòi (0 ngòi)**: Khi đoạn giữa hoàn toàn trống (`CountPiecesBetween == 0`), Pháo không thể ăn quân (không được ăn quân như Xe).
+* **Chặn khi có từ 2 ngòi trở lên ($\ge 2$ ngòi)**: Pháo tuyệt đối không được nhảy qua 2 quân trở lên để ăn quân thứ 3.
+
+### C. Chặn Các Nước Đi Sai Quy Tắc
+* **Chặn ăn quân đồng minh**: Dù có ngòi hay không, ô đích có quân cùng màu đều bị chặn.
+* **Chặn đi chéo và đứng yên**: Tuyệt đối từ chối các nước đi chéo hoặc đứng yên tại chỗ.
+* **Chặn đi ra ngoài bàn cờ**: Lọc sạch mọi tọa độ vượt ra ngoài phạm vi 9 cột và 10 hàng.
+
+### D. Thế Cờ Ban Đầu Tiêu Chuẩn
+* Tại vị trí ban đầu (Pháo Đỏ tại `(1, 7)` và `(7, 7)`; Pháo Đen tại `(1, 2)` và `(7, 2)`):
+  * **Nước đi ngang**: Hàng 7 trống từ cột 2 đến cột 6 $\implies$ Nước mở màn kinh điển **Pháo 2 bình 5** (Pháo đầu `(1, 7) -> (4, 7)`).
+  * **Nước đi dọc**: Cột 1 trước mặt trống từ hàng 6 đến hàng 3 $\implies$ Pháo có thể tiến tự do vào các ô trống này.
+  * **Ăn quân qua ngòi**: Pháo Đỏ `(1, 7)` có đúng 1 ngòi là Pháo Đen `(1, 2)` trên cột 1 $\implies$ Ăn được Mã Đen tại `(1, 0)` (*Pháo ăn Mã* khai cuộc)!
+
+### E. Kiểm Thử CLI & xUnit
+```bash
+# Kiểm thử chuyên biệt luật quân Pháo qua CLI
+dotnet run -- --test-cannon
+
+# Chạy kiểm thử tự động xUnit
+dotnet test tests/GameCoTuong.Tests/GameCoTuong.Tests.csproj
+
+# Hoặc chạy kiểm thử toàn bộ hệ thống
+dotnet run -- --test-all
+```

@@ -259,5 +259,6 @@ export function simulateMove<T>(
 export * from './rules/soldier';
 export * from './rules/chariot';
 export * from './rules/horse';
+export * from './rules/cannon';
 
 
