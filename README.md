@@ -599,3 +599,64 @@ dotnet test tests/GameCoTuong.Tests/GameCoTuong.Tests.csproj
 # Hoặc chạy kiểm thử toàn bộ hệ thống
 dotnet run -- --test-all
 ```
+
+---
+
+## 22. Luật Di Chuyển, Lộ Mặt Tướng & An Toàn: Quân Tướng / Soái (General) (GCT-56)
+
+Quy tắc di chuyển, bộ lọc nước đi an toàn và luật Lộ mặt Tướng (Flying Generals) của quân Tướng (帅 / 将 - General / King) được cài đặt độc lập theo chuẩn Cờ Tướng quốc tế tại [`Engine/Rules/GeneralRule.cs`](file:///Engine/Rules/GeneralRule.cs) và [`src/engine/rules/general.ts`](file:///src/engine/rules/general.ts).
+
+### A. Quy Tắc Di Chuyển Ngang / Dọc 1 Giao Điểm
+* **Hình dạng nước đi**: Tướng chỉ di chuyển theo hướng ngang hoặc dọc đúng **1 giao điểm** mỗi nước đi:
+  $$(|dCol| == 1 \land dRow == 0) \lor (dCol == 0 \land |dRow| == 1)$$
+* **4 hướng ngang/dọc tiềm năng**:
+  * Tiến thẳng: $(dCol = 0, dRow = -1 \text{ với Đỏ}, +1 \text{ với Đen})$
+  * Thoái thẳng: $(dCol = 0, dRow = +1 \text{ với Đỏ}, -1 \text{ với Đen})$
+  * Sang trái: $(dCol = -1, dRow = 0)$
+  * Sang phải: $(dCol = +1, dRow = 0)$
+* **Chặn các hình dạng di chuyển sai**: Tuyệt đối chặn đi chéo (như Sĩ/Tượng), nhảy chữ L (như Mã), nhảy nhiều hơn 1 ô hoặc đứng yên tại chỗ.
+
+### B. Giới Hạn Nghiêm Ngặt Trong Cửu Cung (Palace Constraint)
+* **Phạm vi Cửu cung**:
+  * Cột chung: $Col \in [3, 5]$ (cột 3, 4, 5).
+  * Cung Đen: $Row \in [0, 2]$ (hàng 0, 1, 2).
+  * Cung Đỏ: $Row \in [7, 9]$ (hàng 7, 8, 9).
+* **Từ chối mọi điểm ngoài cung**: Mọi nước đi có điểm đến vượt ra ngoài Cửu cung bên mình đều bị từ chối tuyệt đối (`!IsInPalace(color, to)`).
+
+### C. Quy Tắc Lộ Mặt Tướng (Flying Generals / Đối Diện Trực Tiếp)
+* **Khái niệm**: Hai quân Tướng của hai bên tuyệt đối không được phép nhìn thẳng mặt nhau trên cùng một cột dọc mà không có bất kỳ quân cờ nào che chắn ở giữa.
+* **Cơ chế kiểm tra**:
+  * Giả lập nước đi của Tướng sang ô mới `to`.
+  * Xác định cột của Tướng đối phương.
+  * Nếu 2 Tướng ở cùng cột dọc: đếm số quân nằm giữa hai Tướng trên cột đó:
+    $$\text{countPiecesBetween} == 0 \implies \text{Vi phạm luật Lộ mặt Tướng (Bị Cấm Tuyệt Đối)}.$$
+  * Nếu có ít nhất 1 quân cờ bất kỳ (của ta hoặc đối thủ) chắn giữa hai Tướng $\implies$ Nước đi hợp lệ.
+
+### D. Bộ Lọc An Toàn Điểm Đến (Safe Destination Filter / Anti-Suicide)
+* **Khái niệm**: Quân Tướng là nguyên thủ tối cao; luật Cờ Tướng cấm Tướng tự ý đi vào bất kỳ ô cờ nào đang bị quân đối phương khống chế hoặc chiếu xạ (không được tự sát).
+* **Cơ chế kiểm tra ô bị khống chế (`IsSquareAttacked`)**:
+  * **Xe / Tướng địch**: Kiểm tra 4 hướng ngang/dọc xuất phát từ ô `to`; nếu gặp Xe địch (hoặc Tướng địch) trên đường thẳng trống $\implies$ Bị khống chế.
+  * **Pháo địch**: Kiểm tra 4 hướng ngang/dọc; nếu xuất hiện đúng 1 quân làm ngòi và phía sau là Pháo địch $\implies$ Bị chiếu, cấm đi vào.
+  * **Mã địch**: Quét 8 ô Mã tiềm năng có thể nhảy tới `to`; nếu Mã địch không bị cản chân $\implies$ Bị khống chế.
+  * **Tốt địch**: Kiểm tra các ô Tốt địch có thể kiểm soát (tiến nếu chưa qua sông; tiến hoặc ngang nếu đã qua sông).
+* **Ăn quân đối phương có bảo kê**:
+  * Nếu quân địch tại `to` không có quân bảo kê $\implies$ Tướng được phép ăn quân đó.
+  * Nếu quân địch tại `to` được quân địch khác bảo vệ (ví dụ Xe, Pháo, Mã hoặc Tốt bảo kê) $\implies$ Ô đó vẫn bị khống chế, Tướng bị cấm ăn quân (chống tự sát).
+
+### E. Thế Cờ Ban Đầu Tiêu Chuẩn
+* Tại vị trí ban đầu của ván đấu (Tướng Đỏ tại `(4, 9)`; Tướng Đen tại `(4, 0)`):
+  * Hai bên mạn sườn `(3, 9)` và `(5, 9)` đã có Sĩ Đỏ che chắn.
+  * Điểm đến phía trước `(4, 8)` là ô an toàn và được Binh tại `(4, 6)` chắn giữa, không làm lộ mặt Tướng Đen `(4, 0)`.
+  * Tướng mỗi bên có đúng **1 nước đi tiến lên duy nhất** trong Cửu cung.
+
+### F. Kiểm Thử CLI & xUnit
+```bash
+# Kiểm thử chuyên biệt luật quân Tướng qua CLI
+dotnet run -- --test-general
+
+# Chạy kiểm thử tự động xUnit
+dotnet test tests/GameCoTuong.Tests/GameCoTuong.Tests.csproj
+
+# Hoặc chạy kiểm thử toàn bộ hệ thống
+dotnet run -- --test-all
+```

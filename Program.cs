@@ -36,7 +36,7 @@ try
 
     if (arg == "--test-all")
     {
-        Console.WriteLine("\n================ CHẠY TOÀN BỘ KIỂM THỬ HỆ THỐNG (GCT-31, GCT-42, GCT-43, GCT-50, GCT-51, GCT-52, GCT-53, GCT-54, GCT-55) ================");
+        Console.WriteLine("\n================ CHẠY TOÀN BỘ KIỂM THỬ HỆ THỐNG (GCT-31, GCT-42, GCT-43, GCT-50, GCT-51, GCT-52, GCT-53, GCT-54, GCT-55, GCT-56) ================");
         Console.WriteLine(">> Dữ liệu kiểm thử hoàn toàn độc lập và có thể chạy lặp lại vô số lần.");
 
         RunTestEngine();
@@ -47,6 +47,7 @@ try
         RunTestCannon();
         RunTestElephant();
         RunTestAdvisor();
+        RunTestGeneral();
         await RunTestRegisterAsync();
         await RunTestLoginAsync();
         await RunTestAuthzAsync();
@@ -55,6 +56,12 @@ try
         Console.ForegroundColor = ConsoleColor.Green;
         Console.WriteLine("\n================ ĐÃ HOÀN TẤT TẤT CẢ CÁC BỘ KIỂM THỬ (100% THÀNH CÔNG) ================\n");
         Console.ResetColor();
+        return;
+    }
+
+    if (arg == "--test-general" || arg == "--test-tuong-quan")
+    {
+        RunTestGeneral();
         return;
     }
 
@@ -2347,6 +2354,182 @@ void RunTestAdvisor()
     }
 }
 
+void RunTestGeneral()
+{
+    Console.WriteLine("\n================ KIỂM THỬ LUẬT QUÂN TƯỚNG / SOÁI (GCT-56) ================");
 
+    var board = new ChessBoard();
+    board.Clear();
 
+    // TEST 1: Di chuyển 4 hướng ngang/dọc trong Cửu cung khi an toàn (Đỏ tại (4, 8) và Đen tại (4, 1))
+    Console.WriteLine("\n[TEST 1] Tướng ở tâm Cửu cung di chuyển 4 hướng ngang/dọc khi an toàn (Tướng Đỏ và Tướng Đen)...");
+    var centerRed = new Position(4, 8);
+    board.SetPiece(centerRed, new Piece(PieceType.General, PieceColor.Red));
 
+    var legalMovesRed = board.GetLegalMoves(centerRed);
+    var expectedOrthogonalRed = new[] { new Position(4, 7), new Position(4, 9), new Position(3, 8), new Position(5, 8) };
+    bool movesRedOk = legalMovesRed.Count == 4 && expectedOrthogonalRed.All(m => legalMovesRed.Contains(m) && GeneralRule.IsValidMove(board, centerRed, m));
+
+    // Thử với Tướng Đen tại tâm (4, 1)
+    board.Clear();
+    board.ActiveColor = PieceColor.Black;
+    var centerBlack = new Position(4, 1);
+    board.SetPiece(centerBlack, new Piece(PieceType.General, PieceColor.Black));
+
+    var legalMovesBlack = board.GetLegalMoves(centerBlack);
+    var expectedOrthogonalBlack = new[] { new Position(4, 0), new Position(4, 2), new Position(3, 1), new Position(5, 1) };
+    bool movesBlackOk = legalMovesBlack.Count == 4 && expectedOrthogonalBlack.All(m => legalMovesBlack.Contains(m) && GeneralRule.IsValidMove(board, centerBlack, m));
+
+    if (movesRedOk && movesBlackOk)
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine("-> THÀNH CÔNG: Tướng Đỏ và Tướng Đen tại tâm Cửu cung đi được chính xác 4 hướng ngang/dọc!");
+        Console.ResetColor();
+    }
+    else
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine("-> THẤT BẠI: Tướng ở tâm cung không sinh ra đúng 4 nước đi ngang/dọc.");
+        Console.ResetColor();
+    }
+
+    // TEST 2: Chặn đi chéo, đi quá 1 ô, đứng yên, và đi ra ngoài Cửu cung
+    Console.WriteLine("\n[TEST 2] Chặn đi chéo, đi quá 1 ô, đứng yên và đi ra ngoài Cửu cung...");
+    board.Clear();
+    board.ActiveColor = PieceColor.Red;
+    board.SetPiece(centerRed, new Piece(PieceType.General, PieceColor.Red));
+
+    bool invalidMovesBlocked = !GeneralRule.IsValidMove(board, centerRed, centerRed) &&
+                               !GeneralRule.IsValidMove(board, centerRed, new Position(3, 7)) && // Chéo
+                               !GeneralRule.IsValidMove(board, centerRed, new Position(5, 9)) && // Chéo
+                               !GeneralRule.IsValidMove(board, centerRed, new Position(4, 6)) && // Đi 2 ô (ngoài cung)
+                               !GeneralRule.IsValidMove(board, centerRed, new Position(2, 8));   // Ra ngoài cung bên trái
+
+    if (invalidMovesBlocked)
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine("-> THÀNH CÔNG: Chặn triệt để nước đi chéo, nhảy 2 ô, đứng yên hoặc ra ngoài Cửu cung!");
+        Console.ResetColor();
+    }
+    else
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine("-> THẤT BẠI: Chưa chặn đúng các nước đi sai quy cách của Tướng.");
+        Console.ResetColor();
+    }
+
+    // TEST 3: Chặn Lộ mặt Tướng (Flying Generals) khi 2 Tướng cùng cột dọc trống
+    Console.WriteLine("\n[TEST 3] Chặn Lộ mặt Tướng (Flying Generals) trên cùng một cột dọc trống...");
+    board.Clear();
+    board.ActiveColor = PieceColor.Red;
+    board.SetPiece(new Position(3, 9), new Piece(PieceType.General, PieceColor.Red));
+    board.SetPiece(new Position(4, 0), new Piece(PieceType.General, PieceColor.Black));
+
+    // Nước đi sang cột 4 (4, 9) làm lộ mặt Tướng Đen ở (4, 0)
+    bool facingBlocked = !board.IsValidMove(new Position(3, 9), new Position(4, 9));
+
+    // Đặt 1 quân cản (Chariot Đỏ) tại (4, 5) chắn giữa 2 Tướng
+    board.SetPiece(new Position(4, 5), new Piece(PieceType.Chariot, PieceColor.Red));
+    bool shieldAllowed = board.IsValidMove(new Position(3, 9), new Position(4, 9));
+
+    if (facingBlocked && shieldAllowed)
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine("-> THÀNH CÔNG: Chặn tuyệt đối nước đi làm 2 Tướng nhìn thẳng mặt nhau khi cột dọc trống!");
+        Console.ResetColor();
+    }
+    else
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine("-> THẤT BẠI: Quy tắc Lộ mặt Tướng xử lý chưa chính xác.");
+        Console.ResetColor();
+    }
+
+    // TEST 4: Chặn Tướng đi vào ô bị tấn công / khống chế bởi Xe, Pháo, Mã, Tốt đối phương
+    Console.WriteLine("\n[TEST 4] Chặn Tướng đi vào các ô bị khống chế bởi Xe, Pháo, Mã, Tốt đối phương...");
+    board.Clear();
+    board.ActiveColor = PieceColor.Red;
+    board.SetPiece(new Position(4, 9), new Piece(PieceType.General, PieceColor.Red));
+    board.SetPiece(new Position(0, 0), new Piece(PieceType.General, PieceColor.Black)); // Tướng Đen ở góc xa
+
+    // Đặt Xe Đen kiểm soát cột 3
+    board.SetPiece(new Position(3, 1), new Piece(PieceType.Chariot, PieceColor.Black));
+    bool moveIntoChariotBlocked = !board.IsValidMove(new Position(4, 9), new Position(3, 9));
+
+    // Đặt Pháo Đen tại (5, 0) và ngòi tại (5, 5) chiếu ô (5, 9)
+    board.SetPiece(new Position(5, 0), new Piece(PieceType.Cannon, PieceColor.Black));
+    board.SetPiece(new Position(5, 5), new Piece(PieceType.Soldier, PieceColor.Red)); // ngòi
+    bool moveIntoCannonBlocked = !board.IsValidMove(new Position(4, 9), new Position(5, 9));
+
+    // Đặt Mã Đen tại (5, 6) chiếu ô (4, 8) mà không bị cản chân (chân là (5, 7) trống)
+    board.SetPiece(new Position(5, 6), new Piece(PieceType.Horse, PieceColor.Black));
+    bool moveIntoHorseBlocked = !board.IsValidMove(new Position(4, 9), new Position(4, 8));
+
+    if (moveIntoChariotBlocked && moveIntoCannonBlocked && moveIntoHorseBlocked)
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine("-> THÀNH CÔNG: Tướng bị từ chối vào các ô bị Xe, Pháo hoặc Mã đối phương khống chế!");
+        Console.ResetColor();
+    }
+    else
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine("-> THẤT BẠI: Bộ lọc nước đi an toàn của Tướng chưa chặn hết ô bị khống chế.");
+        Console.ResetColor();
+    }
+
+    // TEST 5: Tướng ăn quân đối phương không được bảo kê và bị chặn khi quân được bảo kê
+    Console.WriteLine("\n[TEST 5] Tướng ăn quân đối phương: Được phép nếu không bảo kê, bị chặn nếu có bảo kê...");
+    board.Clear();
+    board.ActiveColor = PieceColor.Red;
+    board.SetPiece(new Position(4, 9), new Piece(PieceType.General, PieceColor.Red));
+    board.SetPiece(new Position(0, 0), new Piece(PieceType.General, PieceColor.Black));
+
+    // Quân Tốt Đen đứng tại (4, 8) không có ai bảo kê
+    board.SetPiece(new Position(4, 8), new Piece(PieceType.Soldier, PieceColor.Black));
+    bool captureUnprotectedOk = board.IsValidMove(new Position(4, 9), new Position(4, 8));
+
+    // Đặt thêm Mã Đen bảo kê ô (4, 8) từ (5, 6)
+    board.SetPiece(new Position(5, 6), new Piece(PieceType.Horse, PieceColor.Black));
+    bool captureProtectedBlocked = !board.IsValidMove(new Position(4, 9), new Position(4, 8));
+
+    if (captureUnprotectedOk && captureProtectedBlocked)
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine("-> THÀNH CÔNG: Tướng ăn được quân không có bảo kê, và không được tự sát ăn quân có bảo kê!");
+        Console.ResetColor();
+    }
+    else
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine("-> THẤT BẠI: Logic bảo kê khi Tướng ăn quân chưa chính xác.");
+        Console.ResetColor();
+    }
+
+    // TEST 6: Tướng ở thế cờ ban đầu: tiến lên 1 ô an toàn sau Sĩ/Tượng
+    Console.WriteLine("\n[TEST 6] Kiểm tra Tướng ở thế cờ ban đầu: Có đúng 1 nước đi tiến lên an toàn...");
+    var initialBoard = new ChessBoard();
+    initialBoard.SetupInitialPosition();
+
+    // Tướng Đỏ tại (4, 9): 2 bên là Sĩ tại (3, 9) và (5, 9), chỉ có thể tiến lên (4, 8)
+    var redGeneralMoves = initialBoard.GetLegalMoves(new Position(4, 9));
+    bool initialRedOk = redGeneralMoves.Count == 1 && redGeneralMoves[0] == new Position(4, 8);
+
+    // Tướng Đen tại (4, 0): chỉ có thể tiến xuống (4, 1)
+    initialBoard.ActiveColor = PieceColor.Black;
+    var blackGeneralMoves = initialBoard.GetLegalMoves(new Position(4, 0));
+    bool initialBlackOk = blackGeneralMoves.Count == 1 && blackGeneralMoves[0] == new Position(4, 1);
+
+    if (initialRedOk && initialBlackOk)
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine("-> THÀNH CÔNG: Tướng ở thế cờ ban đầu có đúng 1 nước đi tiến lên duy nhất trong Cửu cung!");
+        Console.ResetColor();
+    }
+    else
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine("-> THẤT BẠI: Kiểm tra Tướng ở thế cờ ban đầu chưa chính xác.");
+        Console.ResetColor();
+    }
+}

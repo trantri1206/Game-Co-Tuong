@@ -315,6 +315,7 @@ public class ChessBoard
             PieceType.Cannon => CannonRule.IsValidMove(this, from, to),
             PieceType.Elephant => ElephantRule.IsValidMove(this, from, to),
             PieceType.Advisor => AdvisorRule.IsValidMove(this, from, to),
+            PieceType.General => GeneralRule.IsValidMove(this, from, to),
             _ => true
         };
     }
@@ -343,6 +344,7 @@ public class ChessBoard
             PieceType.Cannon => CannonRule.GetLegalMoves(this, from),
             PieceType.Elephant => ElephantRule.GetLegalMoves(this, from),
             PieceType.Advisor => AdvisorRule.GetLegalMoves(this, from),
+            PieceType.General => GeneralRule.GetLegalMoves(this, from),
             _ => new List<Position>()
         };
     }
