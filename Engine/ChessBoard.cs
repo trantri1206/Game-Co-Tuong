@@ -16,6 +16,17 @@ public class ChessBoard
     public const string InitialFen = "rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w - - 0 1";
 
     private readonly Piece?[,] _grid = new Piece?[Cols, Rows];
+    private readonly Stack<UndoMoveRecord> _undoStack = new();
+
+    /// <summary>
+    /// Cho biết hiện tại có thể hoàn tác (Undo) nước đi vừa thực hiện hay không.
+    /// </summary>
+    public bool CanUndo => _undoStack.Count > 0;
+
+    /// <summary>
+    /// Số lượng nước đi trong ngăn xếp hoàn tác hiện tại.
+    /// </summary>
+    public int UndoCount => _undoStack.Count;
 
     /// <summary>
     /// Bên tới lượt đi hiện tại (Mặc định Đỏ đi trước).
@@ -110,6 +121,7 @@ public class ChessBoard
         ActiveColor = PieceColor.Red;
         HalfMoveClock = 0;
         FullMoveNumber = 1;
+        _undoStack.Clear();
         StateVersion++;
     }
 
@@ -117,6 +129,8 @@ public class ChessBoard
     /// Khởi tạo thế cờ tiêu chuẩn của Cờ Tướng:
     /// Đen ở trên (Hàng 0–4), Đỏ ở dưới (Hàng 5–9). Tổng cộng 32 quân.
     /// </summary>
+    public void SetupInitialPosition() => InitStandardBoard();
+
     public void InitStandardBoard()
     {
         Clear();
@@ -194,6 +208,159 @@ public class ChessBoard
         }
 
         StateVersion++;
+    }
+
+    /// <summary>
+    /// Thực hiện nước đi trên bàn cờ, ghi lại quân bị ăn (nếu có), đổi lượt và lưu vào lịch sử hoàn tác.
+    /// </summary>
+    public UndoMoveRecord MakeMove(MoveAction move) => MakeMove(move.From, move.To);
+
+    /// <summary>
+    /// Thực hiện nước đi từ ô xuất phát (from) tới ô đích (to).
+    /// </summary>
+    public UndoMoveRecord MakeMove(Position from, Position to)
+    {
+        var piece = GetPiece(from);
+        if (piece == null)
+        {
+            throw new InvalidOperationException($"Không có quân cờ nào tại ô xuất phát {from}.");
+        }
+
+        if (piece.Color != ActiveColor)
+        {
+            throw new InvalidOperationException(
+                $"Không phải lượt đi của phe {piece.Color}. Hiện tại đang là lượt của phe {ActiveColor}.");
+        }
+
+        var targetPiece = GetPiece(to);
+        if (targetPiece != null && targetPiece.Color == piece.Color)
+        {
+            throw new InvalidOperationException(
+                $"Không thể di chuyển quân {piece} vào ô {to} vì đã có quân cùng phe {targetPiece}.");
+        }
+
+        // Tạo bản ghi hoàn tác trước khi thay đổi trạng thái
+        var undoRecord = new UndoMoveRecord(
+            from: from,
+            to: to,
+            movedPiece: piece,
+            capturedPiece: targetPiece,
+            previousActiveColor: ActiveColor,
+            previousHalfMoveClock: HalfMoveClock,
+            previousFullMoveNumber: FullMoveNumber,
+            previousStateVersion: StateVersion
+        );
+
+        // Di chuyển quân
+        _grid[to.Col, to.Row] = piece;
+        _grid[from.Col, from.Row] = null;
+
+        // Cập nhật bộ đếm nửa nước (HalfMoveClock): reset nếu ăn quân hoặc đi Binh/Tốt
+        if (targetPiece != null || piece.Type == PieceType.Soldier)
+        {
+            HalfMoveClock = 0;
+        }
+        else
+        {
+            HalfMoveClock++;
+        }
+
+        // Đổi lượt đi
+        if (ActiveColor == PieceColor.Black)
+        {
+            FullMoveNumber++;
+            ActiveColor = PieceColor.Red;
+        }
+        else
+        {
+            ActiveColor = PieceColor.Black;
+        }
+
+        StateVersion++;
+        _undoStack.Push(undoRecord);
+
+        return undoRecord;
+    }
+
+    /// <summary>
+    /// Hoàn tác nước đi gần nhất từ ngăn xếp hoàn tác.
+    /// Khôi phục chính xác 100% quân cờ, vị trí, quân bị ăn, bên tới lượt và phiên bản trạng thái.
+    /// </summary>
+    public UndoMoveRecord UndoMove()
+    {
+        if (_undoStack.Count == 0)
+        {
+            throw new InvalidOperationException("Không có nước đi nào trong lịch sử để hoàn tác.");
+        }
+
+        var undoRecord = _undoStack.Pop();
+        UndoMove(undoRecord);
+        return undoRecord;
+    }
+
+    /// <summary>
+    /// Hoàn tác một nước đi cụ thể theo bản ghi UndoMoveRecord.
+    /// </summary>
+    public void UndoMove(UndoMoveRecord undoRecord)
+    {
+        ArgumentNullException.ThrowIfNull(undoRecord);
+
+        // Khôi phục quân cờ về ô xuất phát
+        _grid[undoRecord.From.Col, undoRecord.From.Row] = undoRecord.MovedPiece;
+
+        // Khôi phục quân bị ăn (hoặc null) về ô đích
+        _grid[undoRecord.To.Col, undoRecord.To.Row] = undoRecord.CapturedPiece;
+
+        // Khôi phục các biến trạng thái
+        ActiveColor = undoRecord.PreviousActiveColor;
+        HalfMoveClock = undoRecord.PreviousHalfMoveClock;
+        FullMoveNumber = undoRecord.PreviousFullMoveNumber;
+        StateVersion = undoRecord.PreviousStateVersion;
+    }
+
+    /// <summary>
+    /// Mô phỏng an toàn một nước đi: áp dụng nước đi, chạy logic thử nghiệm, và luôn hoàn tác sau khi hoàn thành.
+    /// Đảm bảo trạng thái ván cờ thật đang chơi tuyệt đối không bị thay đổi.
+    /// </summary>
+    public void Simulate(MoveAction move, Action<ChessBoard> action) => Simulate(move.From, move.To, action);
+
+    public void Simulate(Position from, Position to, Action<ChessBoard> action)
+    {
+        var undo = MakeMove(from, to);
+        try
+        {
+            action(this);
+        }
+        finally
+        {
+            if (_undoStack.Count > 0 && ReferenceEquals(_undoStack.Peek(), undo))
+            {
+                _undoStack.Pop();
+            }
+            UndoMove(undo);
+        }
+    }
+
+    /// <summary>
+    /// Mô phỏng an toàn một nước đi và trả về kết quả tính toán.
+    /// </summary>
+    public T Simulate<T>(MoveAction move, Func<ChessBoard, T> func) => Simulate(move.From, move.To, func);
+
+    public T Simulate<T>(Position from, Position to, Func<ChessBoard, T> func)
+    {
+        var undo = MakeMove(from, to);
+        try
+        {
+            return func(this);
+        }
+        finally
+        {
+            if (_undoStack.Count > 0 && ReferenceEquals(_undoStack.Peek(), undo))
+            {
+                _undoStack.Pop();
+            }
+            UndoMove(undo);
+        }
     }
 
     /// <summary>

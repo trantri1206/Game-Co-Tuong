@@ -300,3 +300,47 @@ dotnet run -- --test-engine
 # Hoặc chạy kiểm thử toàn bộ hệ thống
 dotnet run -- --test-all
 ```
+
+---
+
+## 15. Khởi Tạo Bàn Cờ & Mô Phỏng Nước Đi (GCT-43)
+
+Được thiết kế nhằm chuẩn bị trạng thái ban đầu của bàn cờ và hỗ trợ thử nước, hoàn tác, mô phỏng tính toán chiến thuật (cho AI và thẩm định nước đi) mà **tuyệt đối không làm thay đổi trạng thái trận đấu thật đang diễn ra**.
+
+### A. Khởi Tạo Chuẩn Đầy Đủ 32 Quân Cờ ([`Engine/ChessBoard.cs`](file:///Engine/ChessBoard.cs))
+* **Bố trí 32 quân**:
+  * **Phe Đen (Black - Hàng 0–4)**: Hàng 0 (Xe, Mã, Tượng, Sĩ, Tướng tại (4,0), Sĩ, Tượng, Mã, Xe); Hàng 2 (Pháo tại (1,2) và (7,2)); Hàng 3 (5 Tốt tại các cột chẵn 0, 2, 4, 6, 8).
+  * **Phe Đỏ (Red - Hàng 5–9)**: Hàng 9 (Xe, Mã, Tượng, Sĩ, Soái tại (4,9), Sĩ, Tượng, Mã, Xe); Hàng 7 (Pháo tại (1,7) và (7,7)); Hàng 6 (5 Binh tại các cột chẵn 0, 2, 4, 6, 8).
+* **Quy chuẩn ban đầu**: Đỏ đi trước (`ActiveColor = Red`), `HalfMoveClock = 0`, `FullMoveNumber = 1`, `StateVersion = 1`.
+
+### B. Áp Dụng Nước Thử (`MakeMove`) & Bản Ghi Hoàn Tác ([`Engine/UndoMoveRecord.cs`](file:///Engine/UndoMoveRecord.cs))
+* **Thực hiện nước đi**:
+  * Kiểm tra tính hợp lệ cơ bản: ô xuất phát có quân, quân thuộc phe tới lượt, không ăn quân đồng minh, ô xuất phát khác ô đích (`MoveAction`).
+  * Di chuyển quân đến ô đích, làm trống ô xuất phát.
+  * Nếu ăn quân: lưu lại `CapturedPiece` và reset `HalfMoveClock = 0`.
+  * Nếu đi Binh/Tốt: reset `HalfMoveClock = 0`.
+  * Đổi lượt đi: Đỏ $\leftrightarrow$ Đen. Tăng `FullMoveNumber` khi Đen hoàn thành lượt.
+  * Tăng `StateVersion` và đẩy `UndoMoveRecord` vào ngăn xếp `_undoStack`.
+
+### C. Hoàn Tác Nước Đi (`UndoMove`) Khôi Phục Chính Xác 100%
+* Lấy bản ghi `UndoMoveRecord` gần nhất từ ngăn xếp.
+* Đưa quân đã di chuyển (`MovedPiece`) trở lại ô xuất phát (`From`).
+* Khôi phục quân bị ăn (`CapturedPiece`) trở lại ô đích (`To`), hồi sinh nguyên vẹn số lượng quân cờ trên bàn.
+* Phục hồi nguyên bản các biến đếm: `ActiveColor`, `HalfMoveClock`, `FullMoveNumber`, `StateVersion`.
+* Chuỗi nhiều nước đi được hoàn tác ngược thứ tự sẽ đưa chuỗi FEN của bàn cờ về trùng khớp 100% với thế cờ ban đầu.
+
+### D. Mô Phỏng An Toàn Trong Sandbox (`Simulate` & `Clone`)
+* **Hàm `Simulate(from, to, action)`**:
+  * Tự động áp dụng nước đi thử trong khối `try`, thực thi khối lệnh tính toán hoặc đánh giá thế cờ, và luôn đảm bảo gọi `UndoMove` trong khối `finally`.
+  * Đảm bảo an toàn tuyệt đối kể cả khi logic bên trong phát sinh ngoại lệ: bàn cờ thật của trận đấu không bị ảnh hưởng.
+* **Deep Copy (`Clone`)**:
+  * Tạo bản sao sâu độc lập của bàn cờ để cho máy (AI) hoặc các luồng phân tích chạy thử hàng triệu nước đi mà không chạm vào trận đấu chính.
+
+### E. Kiểm Thử CLI & xUnit
+```bash
+# Kiểm thử chức năng mô phỏng và hoàn tác nước đi cờ tướng
+dotnet run -- --test-simulation
+
+# Kiểm thử toàn diện tất cả các phân hệ từ xác thực tới cờ tướng
+dotnet run -- --test-all
+```

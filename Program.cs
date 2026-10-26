@@ -35,10 +35,11 @@ try
 
     if (arg == "--test-all")
     {
-        Console.WriteLine("\n================ CHẠY TOÀN BỘ KIỂM THỬ HỆ THỐNG (GCT-31 & GCT-42) ================");
+        Console.WriteLine("\n================ CHẠY TOÀN BỘ KIỂM THỬ HỆ THỐNG (GCT-31, GCT-42, GCT-43) ================");
         Console.WriteLine(">> Dữ liệu kiểm thử hoàn toàn độc lập và có thể chạy lặp lại vô số lần.");
 
         RunTestEngine();
+        RunTestSimulation();
         await RunTestRegisterAsync();
         await RunTestLoginAsync();
         await RunTestAuthzAsync();
@@ -47,6 +48,12 @@ try
         Console.ForegroundColor = ConsoleColor.Green;
         Console.WriteLine("\n================ ĐÃ HOÀN TẤT TẤT CẢ CÁC BỘ KIỂM THỬ (100% THÀNH CÔNG) ================\n");
         Console.ResetColor();
+        return;
+    }
+
+    if (arg == "--test-simulation")
+    {
+        RunTestSimulation();
         return;
     }
 
@@ -894,4 +901,220 @@ void RunTestEngine()
         Console.ResetColor();
     }
 }
+
+void RunTestSimulation()
+{
+    Console.WriteLine("\n================ KIỂM THỬ KHỞI TẠO BÀN CỜ & MÔ PHỎNG NƯỚC ĐI (GCT-43) ================");
+    Console.WriteLine(">> Kiểm thử toàn diện 32 quân, áp dụng nước đi, hoàn tác 100%, sandbox mô phỏng và deep clone.");
+
+    // TEST 1: Khởi tạo đủ 32 quân theo đúng màu và vị trí
+    Console.WriteLine("\n[TEST 1] Khởi tạo đủ 32 quân cờ chuẩn xác theo màu và vị trí...");
+    var board = new ChessBoard();
+    board.SetupInitialPosition();
+
+    bool countOk = board.CountPieces() == 32 &&
+                   board.CountPieces(PieceColor.Red) == 16 &&
+                   board.CountPieces(PieceColor.Black) == 16;
+    var redGen = board.FindGeneral(PieceColor.Red);
+    var blackGen = board.FindGeneral(PieceColor.Black);
+    bool generalOk = redGen == new Position(4, 9) && blackGen == new Position(4, 0);
+
+    // Kiểm tra Binh/Tốt và Pháo
+    bool soldiersOk = true;
+    for (int col = 0; col <= 8; col += 2)
+    {
+        var bSoldier = board.GetPiece(col, 3);
+        var rSoldier = board.GetPiece(col, 6);
+        if (bSoldier?.Type != PieceType.Soldier || bSoldier.Color != PieceColor.Black ||
+            rSoldier?.Type != PieceType.Soldier || rSoldier.Color != PieceColor.Red)
+        {
+            soldiersOk = false;
+            break;
+        }
+    }
+
+    if (countOk && generalOk && soldiersOk && board.ActiveColor == PieceColor.Red)
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine("-> THÀNH CÔNG: Đặt đủ 32 quân cờ chính xác vị trí, Đỏ đi trước, Đen ở trên và Đỏ ở dưới.");
+        Console.ResetColor();
+    }
+    else
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine("-> THẤT BẠI: Thiết lập ban đầu 32 quân cờ chưa chính xác.");
+        Console.ResetColor();
+    }
+
+    // TEST 2: Áp dụng nước đi không ăn quân (MakeMove)
+    Console.WriteLine("\n[TEST 2] Áp dụng nước thử không ăn quân: Pháo 2 bình 5 (1, 7) -> (4, 7)...");
+    int initialVer = board.StateVersion;
+    var undo1 = board.MakeMove(new Position(1, 7), new Position(4, 7));
+
+    bool move1Ok = board.GetPiece(1, 7) == null &&
+                   board.GetPiece(4, 7)?.Type == PieceType.Cannon &&
+                   board.GetPiece(4, 7)?.Color == PieceColor.Red &&
+                   board.ActiveColor == PieceColor.Black &&
+                   board.StateVersion == initialVer + 1 &&
+                   !undo1.HasCaptured &&
+                   board.CanUndo;
+
+    if (move1Ok)
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine($"-> THÀNH CÔNG: Đã áp dụng nước đi ({undo1}), đổi lượt sang {board.ActiveColor}, StateVersion: {board.StateVersion}.");
+        Console.ResetColor();
+    }
+    else
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine("-> THẤT BẠI: Nước đi không ăn quân cập nhật trạng thái không đúng.");
+        Console.ResetColor();
+    }
+
+    // TEST 3: Áp dụng nước thử có ăn quân (Capturing Move)
+    Console.WriteLine("\n[TEST 3] Áp dụng nước thử có ăn quân: Đen đi Pháo (1, 2) -> (4, 2), Đỏ ăn Pháo (4, 7) -> (4, 2)...");
+    board.MakeMove(new Position(1, 2), new Position(4, 2)); // Đen đi
+    var undoCapture = board.MakeMove(new Position(4, 7), new Position(4, 2)); // Đỏ ăn
+
+    bool captureOk = undoCapture.HasCaptured &&
+                     undoCapture.CapturedPiece?.Type == PieceType.Cannon &&
+                     undoCapture.CapturedPiece?.Color == PieceColor.Black &&
+                     board.CountPieces() == 31 &&
+                     board.HalfMoveClock == 0;
+
+    if (captureOk)
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine($"-> THÀNH CÔNG: Ăn quân thành công! Đã lưu quân bị ăn: {undoCapture.CapturedPiece}, tổng số quân còn {board.CountPieces()}.");
+        Console.ResetColor();
+    }
+    else
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine("-> THẤT BẠI: Xử lý ăn quân không chính xác.");
+        Console.ResetColor();
+    }
+
+    // TEST 4: Hoàn tác nước đi (UndoMove)
+    Console.WriteLine("\n[TEST 4] Hoàn tác nước đi ăn quân và kiểm tra khôi phục 100%...");
+    var restored = board.UndoMove();
+
+    bool undoOk = board.CountPieces() == 32 &&
+                  board.GetPiece(4, 2)?.Type == PieceType.Cannon &&
+                  board.GetPiece(4, 2)?.Color == PieceColor.Black &&
+                  board.GetPiece(4, 7)?.Type == PieceType.Cannon &&
+                  board.GetPiece(4, 7)?.Color == PieceColor.Red &&
+                  board.ActiveColor == PieceColor.Red;
+
+    if (undoOk)
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine("-> THÀNH CÔNG: Hoàn tác chính xác 100%! Quân bị ăn được hồi sinh, vị trí cũ được khôi phục, đổi lại lượt.");
+        Console.ResetColor();
+    }
+    else
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine("-> THẤT BẠI: Hoàn tác nước ăn quân không khôi phục đúng trạng thái.");
+        Console.ResetColor();
+    }
+
+    // TEST 5: Chuỗi nước đi và hoàn tác ngược chiều (Sequence Undo)
+    Console.WriteLine("\n[TEST 5] Kiểm tra chuỗi nước đi và hoàn tác toàn bộ về FEN gốc...");
+    var cleanBoard = new ChessBoard();
+    cleanBoard.SetupInitialPosition();
+    string originalFen = cleanBoard.ToFen();
+
+    cleanBoard.MakeMove(new Position(1, 7), new Position(4, 7)); // Pháo 2 bình 5
+    cleanBoard.MakeMove(new Position(1, 0), new Position(2, 2)); // Mã 2 tiến 3
+    cleanBoard.MakeMove(new Position(1, 9), new Position(2, 7)); // Mã 2 tiến 3
+    cleanBoard.MakeMove(new Position(4, 3), new Position(4, 4)); // Tốt 5 tiến 1
+
+    while (cleanBoard.CanUndo)
+    {
+        cleanBoard.UndoMove();
+    }
+
+    if (cleanBoard.ToFen() == originalFen && cleanBoard.ActiveColor == PieceColor.Red && cleanBoard.UndoCount == 0)
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine("-> THÀNH CÔNG: Áp dụng chuỗi nước đi rồi hoàn tác trả lại chính xác 100% chuỗi FEN ban đầu!");
+        Console.ResetColor();
+    }
+    else
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine("-> THẤT BẠI: Chuỗi hoàn tác không đưa về đúng FEN gốc.");
+        Console.ResetColor();
+    }
+
+    // TEST 6: Mô phỏng an toàn (Simulate Sandbox)
+    Console.WriteLine("\n[TEST 6] Mô phỏng nước đi an toàn (Simulate Sandbox), không ảnh hưởng trận thật...");
+    var matchBoard = new ChessBoard();
+    matchBoard.SetupInitialPosition();
+    string matchFenBefore = matchBoard.ToFen();
+
+    int pieceCountSimulated = matchBoard.Simulate(new Position(1, 7), new Position(4, 7), sandbox =>
+    {
+        // Trong sandbox
+        return sandbox.CountPieces();
+    });
+
+    string matchFenAfter = matchBoard.ToFen();
+    bool sandboxOk = matchFenBefore == matchFenAfter && pieceCountSimulated == 32 && !matchBoard.CanUndo;
+
+    if (sandboxOk)
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine("-> THÀNH CÔNG: Sandbox mô phỏng nước đi tính toán xong và tự động hoàn tác, bàn cờ thật không đổi!");
+        Console.ResetColor();
+    }
+    else
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine("-> THẤT BẠI: Mô phỏng đã làm biến đổi trạng thái bàn cờ gốc.");
+        Console.ResetColor();
+    }
+
+    // TEST 7: Deep Clone
+    Console.WriteLine("\n[TEST 7] Sao chép trạng thái độc lập (Clone Deep Copy)...");
+    var clonedBoard = matchBoard.Clone();
+    clonedBoard.MakeMove(new Position(1, 7), new Position(4, 7));
+
+    if (matchBoard.GetPiece(1, 7) != null && clonedBoard.GetPiece(1, 7) == null && matchBoard.ToFen() == matchFenBefore)
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine("-> THÀNH CÔNG: Bản sao Clone hoàn toàn độc lập, thay đổi trên Clone không ảnh hưởng bàn cờ chính.");
+        Console.ResetColor();
+    }
+    else
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine("-> THẤT BẠI: Deep Clone bị tham chiếu chéo.");
+        Console.ResetColor();
+    }
+
+    // TEST 8: Chặn nước đi không hợp lệ
+    Console.WriteLine("\n[TEST 8] Kiểm tra chặn các thao tác di chuyển không hợp lệ...");
+    int errorsCaught = 0;
+    try { matchBoard.MakeMove(new Position(0, 5), new Position(0, 4)); } catch (InvalidOperationException) { errorsCaught++; } // Ô trống
+    try { matchBoard.MakeMove(new Position(0, 0), new Position(0, 1)); } catch (InvalidOperationException) { errorsCaught++; } // Sai lượt
+    try { matchBoard.MakeMove(new Position(4, 9), new Position(3, 9)); } catch (InvalidOperationException) { errorsCaught++; } // Ăn đồng minh
+    try { new MoveAction(new Position(1, 7), new Position(1, 7)); } catch (ArgumentException) { errorsCaught++; } // Trùng ô
+
+    if (errorsCaught == 4)
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine($"-> THÀNH CÔNG: Đã phát hiện và chặn đúng {errorsCaught}/4 tình huống nước đi không hợp lệ!");
+        Console.ResetColor();
+    }
+    else
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine($"-> THẤT BẠI: Chỉ chặn được {errorsCaught}/4 tình huống.");
+        Console.ResetColor();
+    }
+}
+
 
