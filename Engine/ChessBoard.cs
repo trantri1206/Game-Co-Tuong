@@ -310,6 +310,7 @@ public class ChessBoard
         return piece.Type switch
         {
             PieceType.Soldier => SoldierRule.IsValidMove(this, from, to),
+            PieceType.Chariot => ChariotRule.IsValidMove(this, from, to),
             _ => true
         };
     }
@@ -333,6 +334,7 @@ public class ChessBoard
         return piece.Type switch
         {
             PieceType.Soldier => SoldierRule.GetLegalMoves(this, from),
+            PieceType.Chariot => ChariotRule.GetLegalMoves(this, from),
             _ => new List<Position>()
         };
     }

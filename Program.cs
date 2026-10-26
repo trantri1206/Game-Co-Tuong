@@ -36,12 +36,13 @@ try
 
     if (arg == "--test-all")
     {
-        Console.WriteLine("\n================ CHẠY TOÀN BỘ KIỂM THỬ HỆ THỐNG (GCT-31, GCT-42, GCT-43, GCT-50) ================");
+        Console.WriteLine("\n================ CHẠY TOÀN BỘ KIỂM THỬ HỆ THỐNG (GCT-31, GCT-42, GCT-43, GCT-50, GCT-51) ================");
         Console.WriteLine(">> Dữ liệu kiểm thử hoàn toàn độc lập và có thể chạy lặp lại vô số lần.");
 
         RunTestEngine();
         RunTestSimulation();
         RunTestSoldier();
+        RunTestRook();
         await RunTestRegisterAsync();
         await RunTestLoginAsync();
         await RunTestAuthzAsync();
@@ -50,6 +51,12 @@ try
         Console.ForegroundColor = ConsoleColor.Green;
         Console.WriteLine("\n================ ĐÃ HOÀN TẤT TẤT CẢ CÁC BỘ KIỂM THỬ (100% THÀNH CÔNG) ================\n");
         Console.ResetColor();
+        return;
+    }
+
+    if (arg == "--test-rook" || arg == "--test-chariot")
+    {
+        RunTestRook();
         return;
     }
 
@@ -1392,6 +1399,145 @@ void RunTestSoldier()
         Console.ResetColor();
     }
 }
+
+void RunTestRook()
+{
+    Console.WriteLine("\n================ KIỂM THỬ LUẬT QUÂN XE (CHARIOT / ROOK) (GCT-51) ================");
+    Console.WriteLine(">> Kiểm chứng luật đi ngang/dọc, không nhảy qua quân cản, ăn quân hợp lệ và chặn vi phạm.");
+
+    // TEST 1: Di chuyển ngang dọc tự do trên đường trống
+    Console.WriteLine("\n[TEST 1] Xe di chuyển ngang và dọc tự do qua các ô trống...");
+    var board = new ChessBoard();
+    board.Clear();
+    var rookPos = new Position(4, 4);
+    board.SetPiece(rookPos, new Piece(PieceType.Chariot, PieceColor.Red));
+
+    bool horizontalOk = board.IsValidMove(rookPos, new Position(0, 4)) &&
+                         board.IsValidMove(rookPos, new Position(8, 4)) &&
+                         board.IsValidMove(rookPos, new Position(3, 4));
+
+    bool verticalOk = board.IsValidMove(rookPos, new Position(4, 0)) &&
+                       board.IsValidMove(rookPos, new Position(4, 9)) &&
+                       board.IsValidMove(rookPos, new Position(4, 5));
+
+    var legalMovesEmpty = board.GetLegalMoves(rookPos);
+    if (horizontalOk && verticalOk && legalMovesEmpty.Count == 17)
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine($"-> THÀNH CÔNG: Xe tại tâm (4, 4) đi đủ 17 nước ngang/dọc qua sông tự do trên bàn cờ trống!");
+        Console.ResetColor();
+    }
+    else
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine("-> THẤT BẠI: Di chuyển ngang/dọc trên đường trống không chính xác.");
+        Console.ResetColor();
+    }
+
+    // TEST 2: Chặn đi chéo và chặn đứng yên tại chỗ
+    Console.WriteLine("\n[TEST 2] Chặn đi chéo và chặn đứng yên tại chỗ...");
+    bool diagonalBlocked = !board.IsValidMove(rookPos, new Position(5, 5)) &&
+                           !board.IsValidMove(rookPos, new Position(3, 3)) &&
+                           !board.IsValidMove(rookPos, new Position(6, 2)) &&
+                           !board.IsValidMove(rookPos, rookPos);
+
+    if (diagonalBlocked)
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine("-> THÀNH CÔNG: Đã chặn hoàn toàn các nước đi chéo và nước đi đứng yên tại chỗ!");
+        Console.ResetColor();
+    }
+    else
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine("-> THẤT BẠI: Không chặn được nước đi chéo hoặc đứng yên.");
+        Console.ResetColor();
+    }
+
+    // TEST 3: Chặn nhảy qua quân cản (Không xuyên thấu)
+    Console.WriteLine("\n[TEST 3] Chặn nhảy qua quân cản (bất kể quân ta hay quân địch)...");
+    board.SetPiece(new Position(4, 2), new Piece(PieceType.Soldier, PieceColor.Red)); // Quân ta ở (4, 2)
+    board.SetPiece(new Position(2, 4), new Piece(PieceType.Cannon, PieceColor.Black)); // Quân địch ở (2, 4)
+
+    bool leapBlocked = board.IsValidMove(rookPos, new Position(4, 3)) && // Trước quân cản -> ĐI ĐƯỢC
+                       !board.IsValidMove(rookPos, new Position(4, 2)) && // Vào ô đồng minh -> BỊ CHẶN
+                       !board.IsValidMove(rookPos, new Position(4, 1)) && // Nhảy qua quân cản -> BỊ CHẶN
+                       !board.IsValidMove(rookPos, new Position(4, 0)) && // Nhảy qua quân cản -> BỊ CHẶN
+                       board.IsValidMove(rookPos, new Position(3, 4)) &&  // Trước quân địch -> ĐI ĐƯỢC
+                       board.IsValidMove(rookPos, new Position(2, 4)) &&  // Vào ô quân địch -> ĂN QUÂN HỢP LỆ
+                       !board.IsValidMove(rookPos, new Position(1, 4)) && // Nhảy qua quân địch -> BỊ CHẶN
+                       !board.IsValidMove(rookPos, new Position(0, 4));   // Nhảy qua quân địch -> BỊ CHẶN
+
+    if (leapBlocked)
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine("-> THÀNH CÔNG: Xe tuyệt đối không được nhảy qua quân cản (cả quân mình lẫn quân địch)!");
+        Console.ResetColor();
+    }
+    else
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine("-> THẤT BẠI: Quân Xe đã nhảy qua vật cản trái luật.");
+        Console.ResetColor();
+    }
+
+    // TEST 4: Ăn quân đối phương ở điểm đến hợp lệ và chặn ăn quân cùng màu
+    Console.WriteLine("\n[TEST 4] Ăn quân đối phương ở điểm đến hợp lệ và chặn ăn quân cùng màu...");
+    board.Clear();
+    var redRook = new Position(0, 9);
+    board.SetPiece(redRook, new Piece(PieceType.Chariot, PieceColor.Red));
+    board.SetPiece(new Position(0, 0), new Piece(PieceType.General, PieceColor.Black)); // Tướng Đen ở đích
+    board.SetPiece(new Position(5, 9), new Piece(PieceType.Advisor, PieceColor.Red));   // Sĩ Đỏ đồng minh ở đích
+
+    bool captureEnemyOk = board.IsValidMove(redRook, new Position(0, 0)); // Ăn Tướng địch suốt dọc bàn cờ
+    bool friendlyBlocked = !board.IsValidMove(redRook, new Position(5, 9)); // Chặn ăn Sĩ mình
+
+    if (captureEnemyOk && friendlyBlocked)
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine("-> THÀNH CÔNG: Xe ăn quân đối phương chính xác tại điểm đến và chặn ăn quân cùng màu!");
+        Console.ResetColor();
+    }
+    else
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine("-> THẤT BẠI: Xử lý ăn quân đối phương hoặc chặn đồng minh chưa đúng.");
+        Console.ResetColor();
+    }
+
+    // TEST 5: Thế cờ ban đầu: Xe đi dọc 2 ô trống trước mặt (Xe 1 tiến 1, tiến 2), chặn ngang bởi Mã, chặn dọc bởi Binh
+    Console.WriteLine("\n[TEST 5] Kiểm tra Xe ở thế cờ ban đầu: Đi được 2 ô dọc trước mặt (hàng 8 & 7), chặn ngang bởi Mã, chặn dọc bởi Binh...");
+    var initialBoard = new ChessBoard();
+    initialBoard.SetupInitialPosition();
+
+    var leftRookMoves = initialBoard.GetLegalMoves(new Position(0, 9));
+    var rightRookMoves = initialBoard.GetLegalMoves(new Position(8, 9));
+
+    bool leftOk = leftRookMoves.Count == 2 &&
+                  leftRookMoves.Contains(new Position(0, 8)) &&
+                  leftRookMoves.Contains(new Position(0, 7)) &&
+                  !initialBoard.IsValidMove(new Position(0, 9), new Position(0, 6)) && // Chặn ăn Binh mình
+                  !initialBoard.IsValidMove(new Position(0, 9), new Position(0, 5)) && // Chặn nhảy qua Binh mình
+                  !initialBoard.IsValidMove(new Position(0, 9), new Position(1, 9));   // Chặn ăn Mã mình
+
+    bool rightOk = rightRookMoves.Count == 2 &&
+                   rightRookMoves.Contains(new Position(8, 8)) &&
+                   rightRookMoves.Contains(new Position(8, 7));
+
+    if (leftOk && rightOk)
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine("-> THÀNH CÔNG: Xe ở thế cờ ban đầu đi đúng 2 nước dọc trước mặt (tiến 1, tiến 2), bị chặn ngang bởi Mã và chặn dọc bởi Binh!");
+        Console.ResetColor();
+    }
+    else
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine("-> THẤT BẠI: Xe ở thế cờ ban đầu không xử lý đúng.");
+        Console.ResetColor();
+    }
+}
+
 
 
 

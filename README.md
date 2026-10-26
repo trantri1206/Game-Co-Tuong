@@ -382,3 +382,31 @@ dotnet run -- --test-soldier
 # Hoặc chạy kiểm thử toàn bộ hệ thống
 dotnet run -- --test-all
 ```
+
+---
+
+## 17. Luật Di Chuyển & Ăn Quân: Quân Xe (Chariot / Rook) (GCT-51)
+
+Quy tắc di chuyển và ăn quân của quân Xe (俥 / 車 - Chariot / Rook) được cài đặt độc lập theo chuẩn Cờ Tướng quốc tế tại [`Engine/Rules/ChariotRule.cs`](file:///Engine/Rules/ChariotRule.cs) và [`src/engine/rules/chariot.ts`](file:///src/engine/rules/chariot.ts).
+
+### A. Quy Tắc Di Chuyển Ngang & Dọc Trên Đường Trống
+* **Hướng đi**: Chỉ đi thẳng theo hàng ngang (`from.Row == to.Row`) hoặc cột dọc (`from.Col == to.Col`).
+* **Cự ly di chuyển**: Không giới hạn số bước đi (tối đa 8 ô ngang hoặc 9 ô dọc), qua sông tự do.
+* **Chặn đi chéo và đứng yên**: Tuyệt đối chặn đi chéo ($from.Col \neq to.Col \land from.Row \neq to.Row$) và đứng yên tại chỗ ($from == to$).
+
+### B. Chặn Nhảy Qua Quân Cản (Không Xuyên Thấu)
+* Toàn bộ các giao điểm nằm **ở giữa** ô xuất phát và ô đích bắt buộc phải là ô trống (`CountPiecesBetween == 0`).
+* Nếu có bất kỳ quân cờ nào (cả quân mình lẫn quân đối phương) nằm giữa đường đi $\implies$ Bị chặn lập tức, Xe tuyệt đối không được nhảy qua hoặc đi xuyên thấu.
+
+### C. Ăn Quân Đối Phương & Chặn Ăn Đồng Minh
+* **Ăn quân đối phương**: Xe đi tới ô có quân đối phương (sau đoạn đường trống) thì ăn quân đó. Quân đối phương chính là điểm dừng của nước đi.
+* **Chặn ăn quân đồng minh**: Nếu ô đích có quân cùng màu, nước đi bị chặn.
+
+### D. Kiểm Thử CLI & xUnit
+```bash
+# Kiểm thử chuyên biệt luật quân Xe qua CLI
+dotnet run -- --test-rook
+
+# Hoặc chạy kiểm thử toàn bộ hệ thống
+dotnet run -- --test-all
+```
