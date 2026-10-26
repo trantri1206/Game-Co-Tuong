@@ -303,14 +303,15 @@ dotnet run -- --test-all
 
 ---
 
-## 15. Khởi Tạo Bàn Cờ & Mô Phỏng Nước Đi (GCT-43)
+## 15. Khởi Tạo Bàn Cờ & Mô Phỏng Nước Đi (GCT-43 & GCT-106)
 
 Được thiết kế nhằm chuẩn bị trạng thái ban đầu của bàn cờ và hỗ trợ thử nước, hoàn tác, mô phỏng tính toán chiến thuật (cho AI và thẩm định nước đi) mà **tuyệt đối không làm thay đổi trạng thái trận đấu thật đang diễn ra**.
 
-### A. Khởi Tạo Chuẩn Đầy Đủ 32 Quân Cờ ([`Engine/ChessBoard.cs`](file:///Engine/ChessBoard.cs))
+### A. Khởi Tạo Chuẩn Đầy Đủ 32 Quân Cờ & 58 Ô Trống ([`Engine/ChessBoard.cs`](file:///Engine/ChessBoard.cs))
 * **Bố trí 32 quân**:
   * **Phe Đen (Black - Hàng 0–4)**: Hàng 0 (Xe, Mã, Tượng, Sĩ, Tướng tại (4,0), Sĩ, Tượng, Mã, Xe); Hàng 2 (Pháo tại (1,2) và (7,2)); Hàng 3 (5 Tốt tại các cột chẵn 0, 2, 4, 6, 8).
   * **Phe Đỏ (Red - Hàng 5–9)**: Hàng 9 (Xe, Mã, Tượng, Sĩ, Soái tại (4,9), Sĩ, Tượng, Mã, Xe); Hàng 7 (Pháo tại (1,7) và (7,7)); Hàng 6 (5 Binh tại các cột chẵn 0, 2, 4, 6, 8).
+  * **58 giao điểm trống**: Đảm bảo $32 + 58 = 90$ giao điểm chuẩn xác.
 * **Quy chuẩn ban đầu**: Đỏ đi trước (`ActiveColor = Red`), `HalfMoveClock = 0`, `FullMoveNumber = 1`, `StateVersion = 1`.
 
 ### B. Áp Dụng Nước Thử (`MakeMove`) & Bản Ghi Hoàn Tác ([`Engine/UndoMoveRecord.cs`](file:///Engine/UndoMoveRecord.cs))
@@ -329,12 +330,13 @@ dotnet run -- --test-all
 * Phục hồi nguyên bản các biến đếm: `ActiveColor`, `HalfMoveClock`, `FullMoveNumber`, `StateVersion`.
 * Chuỗi nhiều nước đi được hoàn tác ngược thứ tự sẽ đưa chuỗi FEN của bàn cờ về trùng khớp 100% với thế cờ ban đầu.
 
-### D. Mô Phỏng An Toàn Trong Sandbox (`Simulate` & `Clone`)
+### D. Mô Phỏng An Toàn Trong Sandbox (`Simulate` & `Clone`) & Cây Nước Đi (Minimax Tree)
 * **Hàm `Simulate(from, to, action)`**:
   * Tự động áp dụng nước đi thử trong khối `try`, thực thi khối lệnh tính toán hoặc đánh giá thế cờ, và luôn đảm bảo gọi `UndoMove` trong khối `finally`.
   * Đảm bảo an toàn tuyệt đối kể cả khi logic bên trong phát sinh ngoại lệ: bàn cờ thật của trận đấu không bị ảnh hưởng.
-* **Deep Copy (`Clone`)**:
-  * Tạo bản sao sâu độc lập của bàn cờ để cho máy (AI) hoặc các luồng phân tích chạy thử hàng triệu nước đi mà không chạm vào trận đấu chính.
+* **Duyệt nhiều nhánh (Tree Branching)**: Thử nghiệm nhiều nhánh ứng viên từ một thế cờ mà không gây rò rỉ trạng thái.
+* **Mô phỏng sâu nhiều tầng (Deep Nested Simulation)**: Thử nghiệm cây tìm kiếm minimax sâu 3 tầng, tự động unwind sạch sẽ về trạng thái gốc không làm mất bất kỳ quân nào.
+* **Deep Copy (`Clone`)**: Tạo bản sao sâu độc lập của bàn cờ để cho máy (AI) hoặc các luồng phân tích chạy thử hàng triệu nước đi mà không chạm vào trận đấu chính.
 
 ### E. Kiểm Thử CLI & xUnit
 ```bash

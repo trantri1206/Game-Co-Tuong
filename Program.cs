@@ -904,22 +904,35 @@ void RunTestEngine()
 
 void RunTestSimulation()
 {
-    Console.WriteLine("\n================ KIỂM THỬ KHỞI TẠO BÀN CỜ & MÔ PHỎNG NƯỚC ĐI (GCT-43) ================");
-    Console.WriteLine(">> Kiểm thử toàn diện 32 quân, áp dụng nước đi, hoàn tác 100%, sandbox mô phỏng và deep clone.");
+    Console.WriteLine("\n================ KIỂM THỬ KHỞI TẠO BÀN CỜ & MÔ PHỎNG NƯỚC ĐI (GCT-43 & GCT-106) ================");
+    Console.WriteLine(">> Kiểm chứng toàn diện dữ liệu bàn cờ dùng cho bộ luật và máy (AI).");
 
-    // TEST 1: Khởi tạo đủ 32 quân theo đúng màu và vị trí
-    Console.WriteLine("\n[TEST 1] Khởi tạo đủ 32 quân cờ chuẩn xác theo màu và vị trí...");
+    // TEST 1: Khởi tạo đủ 32 quân theo đúng màu và vị trí, cùng 58 ô trống
+    Console.WriteLine("\n[TEST 1] Khởi tạo đủ 32 quân cờ chuẩn xác theo màu, vị trí và 58 ô trống...");
     var board = new ChessBoard();
     board.SetupInitialPosition();
 
+    int occupiedCount = 0;
+    int emptyCount = 0;
+    for (int r = 0; r < ChessBoard.Rows; r++)
+    {
+        for (int c = 0; c < ChessBoard.Cols; c++)
+        {
+            if (board.GetPiece(c, r) != null) occupiedCount++;
+            else emptyCount++;
+        }
+    }
+
     bool countOk = board.CountPieces() == 32 &&
                    board.CountPieces(PieceColor.Red) == 16 &&
-                   board.CountPieces(PieceColor.Black) == 16;
+                   board.CountPieces(PieceColor.Black) == 16 &&
+                   occupiedCount == 32 &&
+                   emptyCount == 58;
+
     var redGen = board.FindGeneral(PieceColor.Red);
     var blackGen = board.FindGeneral(PieceColor.Black);
     bool generalOk = redGen == new Position(4, 9) && blackGen == new Position(4, 0);
 
-    // Kiểm tra Binh/Tốt và Pháo
     bool soldiersOk = true;
     for (int col = 0; col <= 8; col += 2)
     {
@@ -936,7 +949,7 @@ void RunTestSimulation()
     if (countOk && generalOk && soldiersOk && board.ActiveColor == PieceColor.Red)
     {
         Console.ForegroundColor = ConsoleColor.Green;
-        Console.WriteLine("-> THÀNH CÔNG: Đặt đủ 32 quân cờ chính xác vị trí, Đỏ đi trước, Đen ở trên và Đỏ ở dưới.");
+        Console.WriteLine($"-> THÀNH CÔNG: Đặt đủ 32 quân (16 Đỏ, 16 Đen), 58 ô trống = 90 giao điểm; Đỏ đi trước, Đen ở trên và Đỏ ở dưới.");
         Console.ResetColor();
     }
     else
@@ -1049,40 +1062,87 @@ void RunTestSimulation()
         Console.ResetColor();
     }
 
-    // TEST 6: Mô phỏng an toàn (Simulate Sandbox)
-    Console.WriteLine("\n[TEST 6] Mô phỏng nước đi an toàn (Simulate Sandbox), không ảnh hưởng trận thật...");
-    var matchBoard = new ChessBoard();
-    matchBoard.SetupInitialPosition();
-    string matchFenBefore = matchBoard.ToFen();
-
-    int pieceCountSimulated = matchBoard.Simulate(new Position(1, 7), new Position(4, 7), sandbox =>
+    // TEST 6: Thử nhiều nhánh mô phỏng (Multi-Branch Breadth)
+    Console.WriteLine("\n[TEST 6] Mô phỏng duyệt nhiều nhánh mở cờ ứng viên (Tree Branching)...");
+    var candidateMoves = new[]
     {
-        // Trong sandbox
-        return sandbox.CountPieces();
-    });
+        new MoveAction(1, 7, 4, 7), // Pháo 2 bình 5
+        new MoveAction(1, 9, 2, 7), // Mã 2 tiến 3
+        new MoveAction(4, 6, 4, 5), // Binh 5 tiến 1
+        new MoveAction(7, 9, 6, 7)  // Mã 8 tiến 7
+    };
 
-    string matchFenAfter = matchBoard.ToFen();
-    bool sandboxOk = matchFenBefore == matchFenAfter && pieceCountSimulated == 32 && !matchBoard.CanUndo;
+    bool branchesOk = true;
+    foreach (var move in candidateMoves)
+    {
+        cleanBoard.Simulate(move, sandbox =>
+        {
+            if (sandbox.ActiveColor != PieceColor.Black || sandbox.CountPieces() != 32)
+            {
+                branchesOk = false;
+            }
+        });
 
-    if (sandboxOk)
+        if (cleanBoard.ToFen() != originalFen || cleanBoard.ActiveColor != PieceColor.Red || cleanBoard.CanUndo)
+        {
+            branchesOk = false;
+            break;
+        }
+    }
+
+    if (branchesOk)
     {
         Console.ForegroundColor = ConsoleColor.Green;
-        Console.WriteLine("-> THÀNH CÔNG: Sandbox mô phỏng nước đi tính toán xong và tự động hoàn tác, bàn cờ thật không đổi!");
+        Console.WriteLine("-> THÀNH CÔNG: Thử nghiệm 4 nhánh mô phỏng khác nhau đều hoàn nguyên bàn cờ gốc 100%, không rò rỉ trạng thái!");
         Console.ResetColor();
     }
     else
     {
         Console.ForegroundColor = ConsoleColor.Red;
-        Console.WriteLine("-> THẤT BẠI: Mô phỏng đã làm biến đổi trạng thái bàn cờ gốc.");
+        Console.WriteLine("-> THẤT BẠI: Mô phỏng nhiều nhánh làm thay đổi bàn cờ chính.");
         Console.ResetColor();
     }
 
-    // TEST 7: Deep Clone
-    Console.WriteLine("\n[TEST 7] Sao chép trạng thái độc lập (Clone Deep Copy)...");
-    var clonedBoard = matchBoard.Clone();
+    // TEST 7: Mô phỏng cây sâu 3 tầng (Deep Nested Simulation / Minimax Tree)
+    Console.WriteLine("\n[TEST 7] Mô phỏng cây tìm kiếm nước đi sâu 3 tầng (Minimax Depth = 3)...");
+    bool deepTreeOk = true;
+    cleanBoard.Simulate(new Position(1, 7), new Position(4, 7), lvl1 =>
+    {
+        lvl1.Simulate(new Position(1, 0), new Position(2, 2), lvl2 =>
+        {
+            lvl2.Simulate(new Position(1, 9), new Position(2, 7), lvl3 =>
+            {
+                if (lvl3.CountPieces() != 32 || lvl3.ActiveColor != PieceColor.Black)
+                {
+                    deepTreeOk = false;
+                }
+            });
+
+            if (lvl2.ActiveColor != PieceColor.Red || lvl2.GetPiece(2, 7) != null) deepTreeOk = false;
+        });
+
+        if (lvl1.ActiveColor != PieceColor.Black || lvl1.GetPiece(2, 2) != null) deepTreeOk = false;
+    });
+
+    if (deepTreeOk && cleanBoard.ToFen() == originalFen && cleanBoard.CountPieces() == 32)
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine("-> THÀNH CÔNG: Cây mô phỏng sâu 3 tầng tự động unwind sạch sẽ, bàn cờ thật không mất bất kỳ quân nào!");
+        Console.ResetColor();
+    }
+    else
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine("-> THẤT BẠI: Mô phỏng sâu làm mất quân hoặc sai trạng thái.");
+        Console.ResetColor();
+    }
+
+    // TEST 8: Deep Clone độc lập
+    Console.WriteLine("\n[TEST 8] Sao chép trạng thái độc lập (Clone Deep Copy)...");
+    var clonedBoard = cleanBoard.Clone();
     clonedBoard.MakeMove(new Position(1, 7), new Position(4, 7));
 
-    if (matchBoard.GetPiece(1, 7) != null && clonedBoard.GetPiece(1, 7) == null && matchBoard.ToFen() == matchFenBefore)
+    if (cleanBoard.GetPiece(1, 7) != null && clonedBoard.GetPiece(1, 7) == null && cleanBoard.ToFen() == originalFen)
     {
         Console.ForegroundColor = ConsoleColor.Green;
         Console.WriteLine("-> THÀNH CÔNG: Bản sao Clone hoàn toàn độc lập, thay đổi trên Clone không ảnh hưởng bàn cờ chính.");
@@ -1095,24 +1155,28 @@ void RunTestSimulation()
         Console.ResetColor();
     }
 
-    // TEST 8: Chặn nước đi không hợp lệ
-    Console.WriteLine("\n[TEST 8] Kiểm tra chặn các thao tác di chuyển không hợp lệ...");
+    // TEST 9: Kiểm tra tọa độ ngoài biên và lượt đi nghiêm ngặt
+    Console.WriteLine("\n[TEST 9] Kiểm tra chặn tọa độ ngoài biên và kiểm soát lượt đi nghiêm ngặt...");
     int errorsCaught = 0;
-    try { matchBoard.MakeMove(new Position(0, 5), new Position(0, 4)); } catch (InvalidOperationException) { errorsCaught++; } // Ô trống
-    try { matchBoard.MakeMove(new Position(0, 0), new Position(0, 1)); } catch (InvalidOperationException) { errorsCaught++; } // Sai lượt
-    try { matchBoard.MakeMove(new Position(4, 9), new Position(3, 9)); } catch (InvalidOperationException) { errorsCaught++; } // Ăn đồng minh
+    try { cleanBoard.GetPiece(-1, 0); } catch (ArgumentOutOfRangeException) { errorsCaught++; }
+    try { cleanBoard.GetPiece(9, 0); } catch (ArgumentOutOfRangeException) { errorsCaught++; }
+    try { cleanBoard.GetPiece(0, 10); } catch (ArgumentOutOfRangeException) { errorsCaught++; }
+    try { cleanBoard.SetPiece(0, -1, null); } catch (ArgumentOutOfRangeException) { errorsCaught++; }
+    try { cleanBoard.MakeMove(new Position(0, 5), new Position(0, 4)); } catch (InvalidOperationException) { errorsCaught++; } // Ô trống
+    try { cleanBoard.MakeMove(new Position(0, 0), new Position(0, 1)); } catch (InvalidOperationException) { errorsCaught++; } // Sai lượt
+    try { cleanBoard.MakeMove(new Position(4, 9), new Position(3, 9)); } catch (InvalidOperationException) { errorsCaught++; } // Ăn đồng minh
     try { new MoveAction(new Position(1, 7), new Position(1, 7)); } catch (ArgumentException) { errorsCaught++; } // Trùng ô
 
-    if (errorsCaught == 4)
+    if (errorsCaught == 8)
     {
         Console.ForegroundColor = ConsoleColor.Green;
-        Console.WriteLine($"-> THÀNH CÔNG: Đã phát hiện và chặn đúng {errorsCaught}/4 tình huống nước đi không hợp lệ!");
+        Console.WriteLine($"-> THÀNH CÔNG: Đã phát hiện và chặn đúng {errorsCaught}/8 tình huống tọa độ ngoài biên và thao tác vi phạm!");
         Console.ResetColor();
     }
     else
     {
         Console.ForegroundColor = ConsoleColor.Red;
-        Console.WriteLine($"-> THẤT BẠI: Chỉ chặn được {errorsCaught}/4 tình huống.");
+        Console.WriteLine($"-> THẤT BẠI: Chỉ chặn được {errorsCaught}/8 tình huống.");
         Console.ResetColor();
     }
 }

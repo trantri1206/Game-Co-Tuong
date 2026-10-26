@@ -4,8 +4,12 @@ using Xunit;
 namespace GameCoTuong.Tests.EngineTests;
 
 /// <summary>
-/// Bộ kiểm thử chuyên biệt cho chức năng khởi tạo bàn cờ và mô phỏng nước đi (GCT-43).
-/// Đảm bảo tính toán độc lập, hoàn tác 100% chính xác và mô phỏng không làm ảnh hưởng bàn cờ thật.
+/// Bộ kiểm thử chuyên biệt cho chức năng kiểm tra bàn cờ ban đầu và mô phỏng nước đi (GCT-43 & GCT-106).
+/// Đảm bảo kiểm chứng dữ liệu bàn cờ dùng cho luật và máy (AI):
+/// - Đủ 32 quân, 58 ô trống, hai màu và vị trí ban đầu.
+/// - Áp dụng rồi hoàn tác nước thường và ăn quân trả lại 100% dữ liệu gốc.
+/// - Thử nhiều nhánh mô phỏng (rộng và sâu), tọa độ ngoài biên và kiểm soát lượt nghiêm ngặt.
+/// - Mô phỏng tuyệt đối không sửa trận thật hoặc làm mất quân cờ.
 /// </summary>
 public class MoveSimulationTests
 {
@@ -76,6 +80,36 @@ public class MoveSimulationTests
         Assert.Equal(1, board.FullMoveNumber);
         Assert.Equal(1, board.StateVersion);
         Assert.False(board.CanUndo);
+    }
+
+    [Fact]
+    public void InitialSetup_Exact58EmptySquares_AndTotal90Squares()
+    {
+        var board = new ChessBoard();
+        board.SetupInitialPosition();
+
+        int occupiedCount = 0;
+        int emptyCount = 0;
+
+        for (int r = 0; r < ChessBoard.Rows; r++)
+        {
+            for (int c = 0; c < ChessBoard.Cols; c++)
+            {
+                var piece = board.GetPiece(c, r);
+                if (piece != null)
+                {
+                    occupiedCount++;
+                }
+                else
+                {
+                    emptyCount++;
+                }
+            }
+        }
+
+        Assert.Equal(32, occupiedCount);
+        Assert.Equal(58, emptyCount);
+        Assert.Equal(90, occupiedCount + emptyCount);
     }
 
     [Fact]
@@ -213,6 +247,92 @@ public class MoveSimulationTests
     }
 
     [Fact]
+    public void Simulation_MultiBranchBreadth_DoesNotMutateRealGame()
+    {
+        var board = new ChessBoard();
+        board.SetupInitialPosition();
+        string initialFen = board.ToFen();
+        int initialVersion = board.StateVersion;
+
+        // Mô phỏng 4 nhánh mở nước khác nhau của Đỏ từ trạng thái gốc
+        var candidateMoves = new[]
+        {
+            new MoveAction(1, 7, 4, 7), // Pháo 2 bình 5
+            new MoveAction(1, 9, 2, 7), // Mã 2 tiến 3
+            new MoveAction(4, 6, 4, 5), // Binh 5 tiến 1
+            new MoveAction(7, 9, 6, 7)  // Mã 8 tiến 7
+        };
+
+        foreach (var move in candidateMoves)
+        {
+            board.Simulate(move, sandbox =>
+            {
+                // Trong sandbox: đã đổi lượt sang Đen, ô xuất phát trống
+                Assert.Equal(PieceColor.Black, sandbox.ActiveColor);
+                Assert.Null(sandbox.GetPiece(move.From));
+                Assert.NotNull(sandbox.GetPiece(move.To));
+                Assert.Equal(32, sandbox.CountPieces());
+            });
+
+            // Sau mỗi nhánh, bàn cờ thật phải ngay lập tức hoàn nguyên
+            Assert.Equal(initialFen, board.ToFen());
+            Assert.Equal(PieceColor.Red, board.ActiveColor);
+            Assert.Equal(initialVersion, board.StateVersion);
+            Assert.Equal(32, board.CountPieces());
+            Assert.False(board.CanUndo);
+        }
+
+        // Sau toàn bộ các nhánh mô phỏng, bàn cờ thật tuyệt đối không mất quân
+        Assert.Equal(initialFen, board.ToFen());
+        Assert.Equal(32, board.CountPieces());
+    }
+
+    [Fact]
+    public void Simulation_DeepNestedBranches_UnwindsCleanlyWithoutPieceLoss()
+    {
+        var board = new ChessBoard();
+        board.SetupInitialPosition();
+        string rootFen = board.ToFen();
+
+        // Cây tìm kiếm nước đi sâu 3 tầng (Minimax simulation depth = 3)
+        // Level 1 (Đỏ): Pháo (1, 7) -> (4, 7)
+        board.Simulate(new Position(1, 7), new Position(4, 7), lvl1Board =>
+        {
+            Assert.Equal(PieceColor.Black, lvl1Board.ActiveColor);
+
+            // Level 2 (Đen): Mã (1, 0) -> (2, 2)
+            lvl1Board.Simulate(new Position(1, 0), new Position(2, 2), lvl2Board =>
+            {
+                Assert.Equal(PieceColor.Red, lvl2Board.ActiveColor);
+
+                // Level 3 (Đỏ): Mã (1, 9) -> (2, 7)
+                lvl2Board.Simulate(new Position(1, 9), new Position(2, 7), lvl3Board =>
+                {
+                    Assert.Equal(PieceColor.Black, lvl3Board.ActiveColor);
+                    Assert.Equal(32, lvl3Board.CountPieces());
+                    Assert.NotNull(lvl3Board.GetPiece(2, 7));
+                    Assert.NotNull(lvl3Board.GetPiece(2, 2));
+                    Assert.NotNull(lvl3Board.GetPiece(4, 7));
+                });
+
+                // Sau Level 3 unwound: Level 2 vẫn giữ nguyên trạng thái của nó
+                Assert.Equal(PieceColor.Red, lvl2Board.ActiveColor);
+                Assert.Null(lvl2Board.GetPiece(2, 7)); // Nước đi level 3 đã được hoàn tác
+            });
+
+            // Sau Level 2 unwound: Level 1 vẫn giữ nguyên
+            Assert.Equal(PieceColor.Black, lvl1Board.ActiveColor);
+            Assert.Null(lvl1Board.GetPiece(2, 2));
+        });
+
+        // Sau toàn bộ cây tìm kiếm: Bàn cờ gốc nguyên vẹn 100%, không mất quân
+        Assert.Equal(rootFen, board.ToFen());
+        Assert.Equal(PieceColor.Red, board.ActiveColor);
+        Assert.Equal(32, board.CountPieces());
+        Assert.False(board.CanUndo);
+    }
+
+    [Fact]
     public void Simulate_Action_DoesNotModifyRealBoard()
     {
         var board = new ChessBoard();
@@ -291,6 +411,52 @@ public class MoveSimulationTests
         Assert.NotNull(board.GetPiece(1, 7));
         Assert.Null(board.GetPiece(4, 7));
         Assert.False(board.CanUndo);
+    }
+
+    [Fact]
+    public void Coordinates_OutOfBounds_RejectsAllOperations()
+    {
+        var board = new ChessBoard();
+        board.SetupInitialPosition();
+
+        var outOfBounds = new (int c, int r)[]
+        {
+            (-1, 0), (9, 0), (0, -1), (0, 10), (-5, -5), (10, 10), (100, 100)
+        };
+
+        foreach (var (c, r) in outOfBounds)
+        {
+            Assert.False(Position.IsValid(c, r));
+            Assert.Throws<ArgumentOutOfRangeException>(() => board.GetPiece(c, r));
+            Assert.Throws<ArgumentOutOfRangeException>(() => board.SetPiece(c, r, new Piece(PieceType.General, PieceColor.Red)));
+            Assert.Throws<ArgumentOutOfRangeException>(() => new Position(c, r));
+        }
+
+        // Bàn cờ không hề bị biến đổi sau các thao tác lỗi
+        Assert.Equal(32, board.CountPieces());
+        Assert.Equal(PieceColor.Red, board.ActiveColor);
+    }
+
+    [Fact]
+    public void TurnOrder_StrictEnforcement_CannotMoveOutOfTurn()
+    {
+        var board = new ChessBoard();
+        board.SetupInitialPosition();
+
+        // Lượt của Đỏ: Cố tình đi quân Đen ở (0, 0) -> lỗi
+        var ex = Assert.Throws<InvalidOperationException>(() => board.MakeMove(new Position(0, 0), new Position(0, 1)));
+        Assert.Contains("Chưa đến lượt đi của phe Black", ex.Message);
+
+        // Đỏ đi hợp lệ: Pháo (1, 7) -> (4, 7)
+        board.MakeMove(new Position(1, 7), new Position(4, 7));
+
+        // Bây giờ lượt của Đen: Cố tình đi quân Đỏ ở (0, 9) -> lỗi
+        var ex2 = Assert.Throws<InvalidOperationException>(() => board.MakeMove(new Position(0, 9), new Position(0, 8)));
+        Assert.Contains("Chưa đến lượt đi của phe Red", ex2.Message);
+
+        // Sau khi hoàn tác: Đỏ lại được đi
+        board.UndoMove();
+        Assert.Equal(PieceColor.Red, board.ActiveColor);
     }
 
     [Fact]
