@@ -499,3 +499,53 @@ dotnet test tests/GameCoTuong.Tests/GameCoTuong.Tests.csproj
 # Hoặc chạy kiểm thử toàn bộ hệ thống
 dotnet run -- --test-all
 ```
+
+---
+
+## 20. Luật Di Chuyển & Cản Mắt: Quân Tượng / Tịnh (Elephant) (GCT-54)
+
+Quy tắc di chuyển, kiểm tra mắt Tượng và giới hạn qua sông của quân Tượng (相 / 象 - Elephant / Minister) được cài đặt độc lập theo chuẩn Cờ Tướng quốc tế tại [`Engine/Rules/ElephantRule.cs`](file:///Engine/Rules/ElephantRule.cs) và [`src/engine/rules/elephant.ts`](file:///src/engine/rules/elephant.ts).
+
+### A. Quy Tắc Di Chuyển Chéo 2 Ô (Hình Chữ Điền 田)
+* **Hình dạng nước đi**: Tượng di chuyển theo đường chéo đúng **2 giao điểm** ở cả hai trục:
+  $$|dCol| == 2 \land |dRow| == 2$$
+* **4 hướng chéo tiềm năng**:
+  * Lên - Trái: $(dCol = -2, dRow = -2)$
+  * Lên - Phải: $(dCol = +2, dRow = -2)$
+  * Xuống - Trái: $(dCol = -2, dRow = +2)$
+  * Xuống - Phải: $(dCol = +2, dRow = +2)$
+* **Phạm vi 7 giao điểm cố định**: Do quy tắc đi chéo 2 ô và không qua sông, mỗi bên Tượng chỉ hoạt động trên đúng 7 giao điểm trên sân nhà.
+
+### B. Quy Tắc Chẹn Mắt Tượng (塞象眼 - Elephant's Eye Obstacle)
+* **Xác định Mắt Tượng**: Giao điểm chính giữa đường chéo nối ô xuất phát và ô đích:
+  $$eyeCol = from.Col + \frac{dCol}{2}, \quad eyeRow = from.Row + \frac{dRow}{2}$$
+* **Cơ chế chẹn mắt**:
+  * Ô mắt Tượng bắt buộc phải hoàn toàn trống (`board.GetPiece(eye) == null`).
+  * Nếu có bất kỳ quân cờ nào (quân mình hoặc quân đối phương) đứng tại mắt Tượng $\implies$ Nước đi bị chẹn hoàn toàn (`IsEyeBlocked == true`), Tượng tuyệt đối không được nhảy qua.
+  * Khi bị chẹn cả 4 mắt Tượng xung quanh, Tượng có đúng 0 nước đi hợp lệ.
+
+### C. Quy Tắc Không Qua Sông (Tượng Bất Quá Hà)
+* **Tượng Đỏ (相)**: Chỉ hoạt động ở nửa dưới bàn cờ ($Row \ge 5$). Tuyệt đối cấm nhảy sang $Row \le 4$ kể cả khi mắt Tượng và đường đi hoàn toàn trống.
+* **Tượng Đen (象)**: Chỉ hoạt động ở nửa trên bàn cờ ($Row \le 4$). Tuyệt đối cấm nhảy sang $Row \ge 5$ kể cả khi mắt Tượng và đường đi hoàn toàn trống.
+
+### D. Ăn Quân Đối Phương & Chặn Nước Đi Sai
+* **Ăn quân đối phương**: Khi ô đích hợp lệ có quân đối phương (mắt Tượng trống, không qua sông), Tượng nhảy tới và ăn quân đó.
+* **Chặn ăn quân đồng minh**: Tuyệt đối không được nhảy vào ô có quân cùng phe.
+* **Chặn các hình dạng di chuyển sai**: Chặn đi chéo 1 ô (như Sĩ), đi thẳng/ngang (như Xe), chữ L (như Mã), đứng yên tại chỗ hoặc vượt ra ngoài biên bàn cờ.
+
+### E. Thế Cờ Ban Đầu Tiêu Chuẩn
+* Tại vị trí ban đầu của ván đấu (Tượng Đỏ tại `(2, 9)` và `(6, 9)`; Tượng Đen tại `(2, 0)` và `(6, 0)`):
+  * Hướng xuống đáy nằm ngoài bàn cờ.
+  * Hướng tiến vào tâm `(4, 7)` và tiến ra biên `(0, 7)` / `(8, 7)` đều có mắt Tượng trống $\implies$ Mỗi quân Tượng ban đầu có đúng **2 nước tiến hợp lệ** (ví dụ Tượng 3 tiến 5 hoặc Tượng 7 tiến 5).
+
+### F. Kiểm Thử CLI & xUnit
+```bash
+# Kiểm thử chuyên biệt luật quân Tượng qua CLI
+dotnet run -- --test-elephant
+
+# Chạy kiểm thử tự động xUnit
+dotnet test tests/GameCoTuong.Tests/GameCoTuong.Tests.csproj
+
+# Hoặc chạy kiểm thử toàn bộ hệ thống
+dotnet run -- --test-all
+```

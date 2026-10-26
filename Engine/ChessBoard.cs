@@ -313,6 +313,7 @@ public class ChessBoard
             PieceType.Chariot => ChariotRule.IsValidMove(this, from, to),
             PieceType.Horse => HorseRule.IsValidMove(this, from, to),
             PieceType.Cannon => CannonRule.IsValidMove(this, from, to),
+            PieceType.Elephant => ElephantRule.IsValidMove(this, from, to),
             _ => true
         };
     }
@@ -339,6 +340,7 @@ public class ChessBoard
             PieceType.Chariot => ChariotRule.GetLegalMoves(this, from),
             PieceType.Horse => HorseRule.GetLegalMoves(this, from),
             PieceType.Cannon => CannonRule.GetLegalMoves(this, from),
+            PieceType.Elephant => ElephantRule.GetLegalMoves(this, from),
             _ => new List<Position>()
         };
     }
