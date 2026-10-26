@@ -3,6 +3,7 @@ using GameCoTuong.Data;
 using GameCoTuong.Data.Seed;
 using GameCoTuong.DTOs;
 using GameCoTuong.Engine;
+using GameCoTuong.Engine.Rules;
 using GameCoTuong.Entities;
 using GameCoTuong.Services;
 using Microsoft.EntityFrameworkCore;
@@ -35,11 +36,12 @@ try
 
     if (arg == "--test-all")
     {
-        Console.WriteLine("\n================ CHẠY TOÀN BỘ KIỂM THỬ HỆ THỐNG (GCT-31, GCT-42, GCT-43) ================");
+        Console.WriteLine("\n================ CHẠY TOÀN BỘ KIỂM THỬ HỆ THỐNG (GCT-31, GCT-42, GCT-43, GCT-50) ================");
         Console.WriteLine(">> Dữ liệu kiểm thử hoàn toàn độc lập và có thể chạy lặp lại vô số lần.");
 
         RunTestEngine();
         RunTestSimulation();
+        RunTestSoldier();
         await RunTestRegisterAsync();
         await RunTestLoginAsync();
         await RunTestAuthzAsync();
@@ -48,6 +50,12 @@ try
         Console.ForegroundColor = ConsoleColor.Green;
         Console.WriteLine("\n================ ĐÃ HOÀN TẤT TẤT CẢ CÁC BỘ KIỂM THỬ (100% THÀNH CÔNG) ================\n");
         Console.ResetColor();
+        return;
+    }
+
+    if (arg == "--test-soldier")
+    {
+        RunTestSoldier();
         return;
     }
 
@@ -1173,12 +1181,217 @@ void RunTestSimulation()
         Console.WriteLine($"-> THÀNH CÔNG: Đã phát hiện và chặn đúng {errorsCaught}/8 tình huống tọa độ ngoài biên và thao tác vi phạm!");
         Console.ResetColor();
     }
+}
+
+void RunTestSoldier()
+{
+    Console.WriteLine("\n================ KIỂM THỬ LUẬT QUÂN TỐT / BINH (GCT-50) ================");
+    Console.WriteLine(">> Kiểm chứng luật tiến, qua sông, đi ngang, hàng đáy, ăn quân và chặn vi phạm.");
+
+    // TEST 1: Kiểm tra ranh giới sông
+    Console.WriteLine("\n[TEST 1] Kiểm tra xác định ranh giới sông cho hai phe...");
+    bool riverOk = !SoldierRule.HasCrossedRiver(PieceColor.Red, 6) &&
+                   !SoldierRule.HasCrossedRiver(PieceColor.Red, 5) &&
+                   SoldierRule.HasCrossedRiver(PieceColor.Red, 4) &&
+                   SoldierRule.HasCrossedRiver(PieceColor.Red, 0) &&
+                   !SoldierRule.HasCrossedRiver(PieceColor.Black, 3) &&
+                   !SoldierRule.HasCrossedRiver(PieceColor.Black, 4) &&
+                   SoldierRule.HasCrossedRiver(PieceColor.Black, 5) &&
+                   SoldierRule.HasCrossedRiver(PieceColor.Black, 9);
+
+    if (riverOk)
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine("-> THÀNH CÔNG: Xác định chính xác ranh giới sông: Đỏ qua sông khi Row <= 4, Đen qua sông khi Row >= 5.");
+        Console.ResetColor();
+    }
     else
     {
         Console.ForegroundColor = ConsoleColor.Red;
-        Console.WriteLine($"-> THẤT BẠI: Chỉ chặn được {errorsCaught}/8 tình huống.");
+        Console.WriteLine("-> THẤT BẠI: Xác định ranh giới sông không chính xác.");
+        Console.ResetColor();
+    }
+
+    // TEST 2: Binh Đỏ trước sông
+    Console.WriteLine("\n[TEST 2] Binh Đỏ trước sông (4, 6): Chỉ được tiến thẳng một giao điểm...");
+    var board = new ChessBoard();
+    board.Clear();
+    var redBeforeRiver = new Position(4, 6);
+    board.SetPiece(redBeforeRiver, new Piece(PieceType.Soldier, PieceColor.Red));
+
+    bool redBeforeOk = board.IsValidMove(redBeforeRiver, new Position(4, 5)) && // Tiến thẳng hợp lệ
+                       !board.IsValidMove(redBeforeRiver, new Position(3, 6)) && // Ngang trái bị chặn
+                       !board.IsValidMove(redBeforeRiver, new Position(5, 6)) && // Ngang phải bị chặn
+                       !board.IsValidMove(redBeforeRiver, new Position(4, 7)) && // Lùi bị chặn
+                       !board.IsValidMove(redBeforeRiver, new Position(3, 5)) && // Chéo bị chặn
+                       !board.IsValidMove(redBeforeRiver, new Position(4, 4));   // 2 bước bị chặn
+
+    var redLegalBefore = board.GetLegalMoves(redBeforeRiver);
+    if (redBeforeOk && redLegalBefore.Count == 1 && redLegalBefore[0] == new Position(4, 5))
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine("-> THÀNH CÔNG: Binh Đỏ trước sông chỉ đi được duy nhất 1 nước tiến thẳng (4, 5); chặn ngang, lùi, chéo!");
+        Console.ResetColor();
+    }
+    else
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine("-> THẤT BẠI: Luật Binh Đỏ trước sông vi phạm quy chuẩn.");
+        Console.ResetColor();
+    }
+
+    // TEST 3: Binh Đỏ sau khi qua sông
+    Console.WriteLine("\n[TEST 3] Binh Đỏ sau khi qua sông (4, 4): Được tiến hoặc ngang, không được lùi...");
+    var redAcrossRiver = new Position(4, 4);
+    board.SetPiece(redAcrossRiver, new Piece(PieceType.Soldier, PieceColor.Red));
+
+    bool redAcrossOk = board.IsValidMove(redAcrossRiver, new Position(4, 3)) && // Tiến thẳng
+                       board.IsValidMove(redAcrossRiver, new Position(3, 4)) && // Ngang trái
+                       board.IsValidMove(redAcrossRiver, new Position(5, 4)) && // Ngang phải
+                       !board.IsValidMove(redAcrossRiver, new Position(4, 5)) && // Lùi bị chặn
+                       !board.IsValidMove(redAcrossRiver, new Position(3, 3));   // Chéo bị chặn
+
+    var redLegalAcross = board.GetLegalMoves(redAcrossRiver);
+    if (redAcrossOk && redLegalAcross.Count == 3)
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine("-> THÀNH CÔNG: Binh Đỏ qua sông đi được 3 hướng: tiến thẳng, sang trái, sang phải; chặn tuyệt đối nước đi lùi!");
+        Console.ResetColor();
+    }
+    else
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine("-> THẤT BẠI: Luật Binh Đỏ sau khi qua sông chưa đúng.");
+        Console.ResetColor();
+    }
+
+    // TEST 4: Binh Đỏ ở hàng đáy đối phương
+    Console.WriteLine("\n[TEST 4] Binh Đỏ tại hàng đáy đối phương (4, 0): Vẫn đi ngang được, không phong cấp...");
+    var redAtBottom = new Position(4, 0);
+    board.SetPiece(redAtBottom, new Piece(PieceType.Soldier, PieceColor.Red));
+
+    bool redBottomOk = board.IsValidMove(redAtBottom, new Position(3, 0)) && // Ngang trái
+                       board.IsValidMove(redAtBottom, new Position(5, 0)) && // Ngang phải
+                       !board.IsValidMove(redAtBottom, new Position(4, 1));  // Lùi bị chặn
+
+    var redPiece = board.GetPiece(redAtBottom);
+    if (redBottomOk && redPiece?.Type == PieceType.Soldier)
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine("-> THÀNH CÔNG: Binh Đỏ tại hàng đáy vẫn đi ngang hợp lệ, không phong cấp, giữ nguyên bản chất Binh!");
+        Console.ResetColor();
+    }
+    else
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine("-> THẤT BẠI: Binh Đỏ ở hàng đáy xử lý sai.");
+        Console.ResetColor();
+    }
+
+    // TEST 5: Tốt Đen trước sông
+    Console.WriteLine("\n[TEST 5] Tốt Đen trước sông (4, 3): Chỉ được tiến thẳng xuống một giao điểm...");
+    board.ActiveColor = PieceColor.Black;
+    var blackBeforeRiver = new Position(4, 3);
+    board.SetPiece(blackBeforeRiver, new Piece(PieceType.Soldier, PieceColor.Black));
+
+    bool blackBeforeOk = board.IsValidMove(blackBeforeRiver, new Position(4, 4)) && // Tiến xuống hợp lệ
+                         !board.IsValidMove(blackBeforeRiver, new Position(3, 3)) && // Ngang bị chặn
+                         !board.IsValidMove(blackBeforeRiver, new Position(5, 3)) && // Ngang bị chặn
+                         !board.IsValidMove(blackBeforeRiver, new Position(4, 2)) && // Lùi bị chặn
+                         !board.IsValidMove(blackBeforeRiver, new Position(3, 4));   // Chéo bị chặn
+
+    var blackLegalBefore = board.GetLegalMoves(blackBeforeRiver);
+    if (blackBeforeOk && blackLegalBefore.Count == 1 && blackLegalBefore[0] == new Position(4, 4))
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine("-> THÀNH CÔNG: Tốt Đen trước sông chỉ đi được 1 nước tiến xuống (4, 4); chặn ngang, lùi, chéo!");
+        Console.ResetColor();
+    }
+    else
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine("-> THẤT BẠI: Luật Tốt Đen trước sông vi phạm quy chuẩn.");
+        Console.ResetColor();
+    }
+
+    // TEST 6: Tốt Đen sau khi qua sông
+    Console.WriteLine("\n[TEST 6] Tốt Đen sau khi qua sông (4, 5): Được tiến hoặc ngang, không được lùi...");
+    var blackAcrossRiver = new Position(4, 5);
+    board.SetPiece(blackAcrossRiver, new Piece(PieceType.Soldier, PieceColor.Black));
+
+    bool blackAcrossOk = board.IsValidMove(blackAcrossRiver, new Position(4, 6)) && // Tiến xuống
+                         board.IsValidMove(blackAcrossRiver, new Position(3, 5)) && // Ngang trái
+                         board.IsValidMove(blackAcrossRiver, new Position(5, 5)) && // Ngang phải
+                         !board.IsValidMove(blackAcrossRiver, new Position(4, 4));  // Lùi bị chặn
+
+    var blackLegalAcross = board.GetLegalMoves(blackAcrossRiver);
+    if (blackAcrossOk && blackLegalAcross.Count == 3)
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine("-> THÀNH CÔNG: Tốt Đen qua sông đi được 3 hướng: tiến xuống, sang trái, sang phải; chặn đi lùi!");
+        Console.ResetColor();
+    }
+    else
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine("-> THẤT BẠI: Luật Tốt Đen sau khi qua sông chưa đúng.");
+        Console.ResetColor();
+    }
+
+    // TEST 7: Tốt Đen ở hàng đáy đối phương
+    Console.WriteLine("\n[TEST 7] Tốt Đen tại hàng đáy đối phương (4, 9): Vẫn đi ngang được, không phong cấp...");
+    var blackAtBottom = new Position(4, 9);
+    board.SetPiece(blackAtBottom, new Piece(PieceType.Soldier, PieceColor.Black));
+
+    bool blackBottomOk = board.IsValidMove(blackAtBottom, new Position(3, 9)) && // Ngang trái
+                         board.IsValidMove(blackAtBottom, new Position(5, 9)) && // Ngang phải
+                         !board.IsValidMove(blackAtBottom, new Position(4, 8));  // Lùi bị chặn
+
+    var blackPiece = board.GetPiece(blackAtBottom);
+    if (blackBottomOk && blackPiece?.Type == PieceType.Soldier)
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine("-> THÀNH CÔNG: Tốt Đen tại hàng đáy đối phương đi ngang hợp lệ, không phong cấp, giữ nguyên bản chất!");
+        Console.ResetColor();
+    }
+    else
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine("-> THẤT BẠI: Tốt Đen ở hàng đáy đối phương xử lý sai.");
+        Console.ResetColor();
+    }
+
+    // TEST 8: Ăn quân đối phương và chặn ăn quân đồng minh
+    Console.WriteLine("\n[TEST 8] Tốt ăn quân đối phương hợp lệ và chặn ăn quân cùng màu...");
+    board.ActiveColor = PieceColor.Red;
+    var redAttacker = new Position(4, 4);
+    board.SetPiece(redAttacker, new Piece(PieceType.Soldier, PieceColor.Red));
+    board.SetPiece(new Position(4, 3), new Piece(PieceType.Horse, PieceColor.Black)); // Địch ở ô tiến
+    board.SetPiece(new Position(3, 4), new Piece(PieceType.Cannon, PieceColor.Black)); // Địch ở ô ngang
+    board.SetPiece(new Position(5, 4), new Piece(PieceType.Chariot, PieceColor.Red)); // Đồng minh ở ô ngang
+
+    bool captureOk = board.IsValidMove(redAttacker, new Position(4, 3)) && // Ăn địch tiến
+                     board.IsValidMove(redAttacker, new Position(3, 4)) && // Ăn địch ngang
+                     !board.IsValidMove(redAttacker, new Position(5, 4));  // Chặn ăn đồng minh
+
+    // Kiểm tra biên bàn cờ (cột 0 không được đi sang trái, cột 8 không được đi sang phải)
+    var redCorner = new Position(0, 4);
+    board.SetPiece(redCorner, new Piece(PieceType.Soldier, PieceColor.Red));
+    bool edgeOk = !Position.IsValid(-1, 4) && board.IsValidMove(redCorner, new Position(1, 4));
+
+    if (captureOk && edgeOk)
+    {
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.WriteLine("-> THÀNH CÔNG: Tốt ăn quân đối phương chính xác cả tiến và ngang, chặn ăn đồng minh và chặn ra ngoài biên!");
+        Console.ResetColor();
+    }
+    else
+    {
+        Console.ForegroundColor = ConsoleColor.Red;
+        Console.WriteLine("-> THẤT BẠI: Xử lý ăn quân hoặc biên bàn cờ chưa chính xác.");
         Console.ResetColor();
     }
 }
+
 
 

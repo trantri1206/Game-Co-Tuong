@@ -1,4 +1,5 @@
 using System.Text;
+using GameCoTuong.Engine.Rules;
 
 namespace GameCoTuong.Engine;
 
@@ -280,6 +281,60 @@ public class ChessBoard
         _undoStack.Push(undoRecord);
 
         return undoRecord;
+    }
+
+    /// <summary>
+    /// Kiểm tra xem một nước đi có hợp lệ theo luật cờ của quân cờ tương ứng hay không.
+    /// </summary>
+    public bool IsValidMove(MoveAction move) => IsValidMove(move.From, move.To);
+
+    public bool IsValidMove(Position from, Position to)
+    {
+        if (!Position.IsValid(from.Col, from.Row) || !Position.IsValid(to.Col, to.Row))
+        {
+            return false;
+        }
+
+        var piece = GetPiece(from);
+        if (piece == null || piece.Color != ActiveColor)
+        {
+            return false;
+        }
+
+        var targetPiece = GetPiece(to);
+        if (targetPiece != null && targetPiece.Color == piece.Color)
+        {
+            return false;
+        }
+
+        return piece.Type switch
+        {
+            PieceType.Soldier => SoldierRule.IsValidMove(this, from, to),
+            _ => true
+        };
+    }
+
+    /// <summary>
+    /// Lấy danh sách các nước đi hợp lệ cho quân cờ tại vị trí 'from'.
+    /// </summary>
+    public List<Position> GetLegalMoves(Position from)
+    {
+        if (!Position.IsValid(from.Col, from.Row))
+        {
+            return new List<Position>();
+        }
+
+        var piece = GetPiece(from);
+        if (piece == null)
+        {
+            return new List<Position>();
+        }
+
+        return piece.Type switch
+        {
+            PieceType.Soldier => SoldierRule.GetLegalMoves(this, from),
+            _ => new List<Position>()
+        };
     }
 
     /// <summary>

@@ -346,3 +346,39 @@ dotnet run -- --test-simulation
 # Kiểm thử toàn diện tất cả các phân hệ từ xác thực tới cờ tướng
 dotnet run -- --test-all
 ```
+
+---
+
+## 16. Luật Di Chuyển & Ăn Quân: Quân Tốt / Binh (GCT-50)
+
+Quy tắc di chuyển và ăn quân của quân Tốt (卒 - Black Soldier) và Binh (兵 - Red Soldier) được cài đặt độc lập theo chuẩn Cờ Tướng quốc tế tại [`Engine/Rules/SoldierRule.cs`](file:///Engine/Rules/SoldierRule.cs) và [`src/engine/rules/soldier.ts`](file:///src/engine/rules/soldier.ts).
+
+### A. Quy Tắc Trước & Sau Khi Qua Sông (River Crossing Rule)
+* **Xác định ranh giới sông**:
+  * **Binh Đỏ**: Nửa dưới bàn cờ (`Row 5–9`). **Chưa qua sông** khi $Row \ge 5$; **Đã qua sông** khi $Row \le 4$.
+  * **Tốt Đen**: Nửa trên bàn cờ (`Row 0–4`). **Chưa qua sông** khi $Row \le 4$; **Đã qua sông** khi $Row \ge 5$.
+* **Quy tắc di chuyển**:
+  * **Trước khi qua sông**: Chỉ được phép **tiến thẳng 1 ô** ($Col$ giữ nguyên, $dRow = -1$ với Đỏ, $dRow = +1$ với Đen). Tuyệt đối cấm đi ngang và cấm đi lùi.
+  * **Sau khi qua sông**: Được phép **tiến thẳng 1 ô** HOẶC **đi ngang 1 ô** sang trái/phải ($|dCol| = 1 \land dRow = 0$). Tuyệt đối cấm đi lùi.
+
+### B. Hàng Đáy Đối Phương & Không Phong Cấp (No Promotion)
+* Khi quân Tốt/Binh tiến tới hàng đáy cuối cùng của đối phương (Binh Đỏ tại `Row 0`, Tốt Đen tại `Row 9`):
+  * Không thể tiến thêm do giới hạn biên của bàn cờ ($Row < 0$ hoặc $Row > 9$).
+  * Tuyệt đối không được đi lùi.
+  * **Vẫn được phép đi ngang** sang trái hoặc sang phải 1 bước nếu ô đích hợp lệ (nằm trong bàn cờ và không có quân cùng phe).
+  * **Không phong cấp**: Khác với Cờ Vua, quân Tốt trong Cờ Tướng khi xuống hàng đáy đối phương không biến thành Xe/Pháo/Mã, mà vẫn giữ nguyên là Tốt.
+
+### C. Ăn Quân & Chặn Các Hành Vi Vi Phạm
+* **Quy tắc ăn quân**: Cờ Tướng đi thế nào thì ăn thế ấy. Khi ô đích hợp lệ có quân đối phương, Tốt di chuyển tới và ăn quân đó.
+* **Chặn ăn quân đồng minh**: Tuyệt đối không được đi vào ô đã có quân cùng phe.
+* **Chặn đi chéo & đi quá 1 bước**: Tổng khoảng cách Manhattan $|dCol| + |dRow|$ luôn bắt buộc phải bằng đúng 1.
+* **Chặn đi ra ngoài bàn cờ**: Chặn mọi nước đi vượt ra ngoài phạm vi 9 cột và 10 hàng.
+
+### D. Kiểm Thử CLI & xUnit
+```bash
+# Kiểm thử chuyên biệt luật quân Tốt / Binh qua CLI
+dotnet run -- --test-soldier
+
+# Hoặc chạy kiểm thử toàn bộ hệ thống
+dotnet run -- --test-all
+```

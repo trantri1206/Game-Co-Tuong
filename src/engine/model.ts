@@ -255,3 +255,6 @@ export function simulateMove<T>(
   makeMove(sandbox, move);
   return callback(sandbox);
 }
+
+export * from './rules/soldier';
+
